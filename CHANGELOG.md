@@ -4,11 +4,13 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-27
+
 - tree-sitter 回退引擎的语言覆盖扩展至 TypeScript（`.ts`/`.tsx`）、Go、PHP：主查询逐字 vendor 自各语法上游仓库的 tags.scm 并注明来源与版本，TypeScript 以补充查询覆盖上游签名导向查询缺失的具体类/函数/枚举声明；全部查询外置为 `scripts/queries/<语言>/` 下的文件。文档生成适配器仍为 Java 与 Python，新语言的符号已可被引擎定位。
 - 引擎支持扩展至 Python/FastAPI：`--endpoint` 定位路由函数并输出提示，未解析类型自动补包根（按 `__init__.py` 链推导），`--changed` 覆盖 Python 的传递引用；typing 名称（`Any`/`Union`/`Literal`）不再误报为未解析。
 - 发现协议新增 `locate_many` 批量定位：`--changed` 先做纯 IR 可达性遍历，再一次批量查询全部候选类型；codegraph 后端以线程池并行执行逐名查询，无关 schema 依旧零查询。
 - tree-sitter 回退引擎新增按文件的 mtime+size 跨运行缓存（存放系统临时目录，查询文本变化自动失效，读写全部 fail-open），大仓库重复运行的解析成本大幅下降。
-- tree-sitter 符号提取对齐官方 tags.scm 规范：声明按 `@name` + `@definition.<kind>` 成对捕获、经 `matches()` 配对解析，包名拆分为独立的补充 `@package` 查询；行为不变，为后续直接引入各语法上游 tags.scm 文件扩展语言做准备。
+- tree-sitter 符号提取对齐官方 tags.scm 规范：声明按 `@name` + `@definition.<kind>` 成对捕获、经 `matches()` 配对解析，行为不变，为后续直接引入各语法上游 tags.scm 文件扩展语言做准备。
 ## [0.1.0] - 2026-09-27
 
 - 新增可选的代码发现引擎层：引擎只回答"文件与符号在哪"，字段、wire 名、枚举等语义仍由源码解析产生；无引擎时行为与旧版逐字节一致。
@@ -19,5 +21,6 @@
 - 修复 macOS 符号链接环境下 tree-sitter 回退路径未 resolve 导致 narrowed scan 静默失效的问题；`--no-codegraph` 的优先级高于测试钩子环境变量。
 - 文档同步：SKILL.md 与 README 增补发现引擎章节、降级规则与可选依赖安装方式。
 
-[Unreleased]: https://github.com/ainiaa/skills-api-docs/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/ainiaa/skills-api-docs/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ainiaa/skills-api-docs/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ainiaa/skills-api-docs/releases/tag/v0.1.0
