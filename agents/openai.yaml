@@ -1,0 +1,4 @@
+interface:
+  display_name: "API Savior Docs"
+  short_description: "Generate API docs through source adapters"
+  default_prompt: "Use $api-savior-docs to generate API documentation from the supplied Java/Spring or Python/FastAPI source tree."
