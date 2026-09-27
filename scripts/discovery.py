@@ -7,6 +7,7 @@ failure degrades to the plain filesystem behavior of the generator.
 
 Backends:
 - CodeGraphEngine: shells out to the codegraph CLI when the project is indexed.
+- TreeSitterEngine: builds an in-memory symbol index with tree-sitter grammars.
 - NullEngine: filesystem walk; locate() always misses, so engine-assisted flows
   no-op and the generator behaves exactly as without this module.
 - FakeEngine: in-memory backend for tests, driven by a JSON manifest.
@@ -16,6 +17,7 @@ import os
 import shutil
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 from typing import NamedTuple
@@ -49,6 +51,10 @@ class DiscoveryEngine:
 
     def locate(self, name: str, kinds: Optional[Iterable[str]] = None) -> List[SymbolLocation]:
         return []
+
+    def locate_many(self, names: List[str], kinds: Optional[Iterable[str]] = None) -> Dict[str, List[SymbolLocation]]:
+        """Batch location; engines may override with a parallel or native batch implementation."""
+        return {name: self.locate(name, kinds) for name in names}
 
 
 class NullEngine(DiscoveryEngine):
@@ -116,6 +122,15 @@ class CodeGraphEngine(DiscoveryEngine):
                                        int(node.get("startLine") or 0), node.get("kind", ""),
                                        node.get("name", ""), node.get("qualifiedName", "")))
         return sorted(matches, key=lambda location: (str(location.path), location.line))
+
+    def locate_many(self, names: List[str], kinds: Optional[Iterable[str]] = None) -> Dict[str, List[SymbolLocation]]:
+        """Run one CLI query per name, in parallel threads (each query is a subprocess)."""
+        names = list(names)
+        if len(names) <= 1:
+            return {name: self.locate(name, kinds) for name in names}
+        with ThreadPoolExecutor(max_workers=min(8, len(names))) as executor:
+            results = executor.map(lambda name: self.locate(name, kinds), names)
+        return dict(zip(names, results))
 
     def source_files(self, suffix: str) -> List[Path]:
         payload = self._query(["files", "--json"])

@@ -24,6 +24,7 @@ SCALAR_TYPES = {"String", "CharSequence", "char", "Character", "boolean", "Boole
                 "LocalDateTime", "Date", "UUID"}
 
 CONTROLLER_ANNOTATION_PATTERN = re.compile(r"@(RestController|Controller|FeignClient)\b")
+ROUTE_DECORATOR_PATTERN = re.compile(r"@\w+\.(?:get|post|put|patch|delete|head|options|api_route)\s*\(")
 
 
 def simple_type(type_name: str) -> str:
@@ -208,6 +209,27 @@ def endpoint_source_file(source: str) -> str:
     return re.sub(r":\d+$", "", source)
 
 
+def is_route_file(source_file: Path) -> bool:
+    """FastAPI route files carry method decorators like @app.get("/x")."""
+    try:
+        text = source_file.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return ROUTE_DECORATOR_PATTERN.search(text) is not None
+
+
+def python_package_root(source_file: Path) -> Path:
+    """Topmost directory of the file's __init__.py package chain.
+
+    Mirrors the adapter's module_name derivation: namespace layouts without
+    __init__.py resolve to the file's own directory and simply stay unresolved.
+    """
+    directory = source_file.parent
+    while (directory / "__init__.py").is_file():
+        directory = directory.parent
+    return directory
+
+
 def endpoint_selector_names(selectors: List[str]) -> List[str]:
     names = []
     for selector in selectors:
@@ -239,7 +261,8 @@ def qualified_name_matches(qualified_name: str, package: str, simple: str) -> bo
     return qualified_name.replace("::", ".").startswith(package + ".")
 
 
-def heal_unresolved_roots(engine, unresolved: List[str], known_roots: Set[Path]) -> Dict[Path, str]:
+def heal_unresolved_roots(engine, unresolved: List[str], known_roots: Set[Path],
+                          language: str = "java") -> Dict[Path, str]:
     """Map unresolved type names to candidate source roots via the discovery engine.
 
     Package-qualified names are resolved first and filtered by package, so a
@@ -254,7 +277,7 @@ def heal_unresolved_roots(engine, unresolved: List[str], known_roots: Set[Path])
                 continue
             if package and not qualified_name_matches(location.qualified_name, package, simple):
                 continue
-            root = package_root(location.path)
+            root = package_root(location.path) if language == "java" else python_package_root(location.path)
             if root is None or root in known_roots or root in additions:
                 continue
             additions[root] = name
@@ -299,20 +322,18 @@ def build_java_document(arguments, roots: List[Path], controller_paths: List[Pat
 def affected_endpoints(document: ApiDocument, engine, changed: List[Path]) -> List[Endpoint]:
     """Endpoints whose controller source or transitively referenced DTO types intersect the changed files.
 
-    Schemas are located lazily along each endpoint's reachability traversal, so
-    unrelated schemas never trigger engine queries (each query costs a
-    subprocess for the codegraph backend).
+    Two-pass design: reachability and unresolved candidates are computed from
+    the IR alone (no engine calls), then the union of candidate names is
+    located in one batch — so unrelated schemas never trigger engine queries
+    and each backend pays at most one batched lookup.
     """
     changed_paths = {path.resolve() for path in changed}
-    locate_cache: Dict[str, List[SymbolLocation]] = {}
-
-    def locate(name: str) -> List[SymbolLocation]:
-        if name not in locate_cache:
-            locate_cache[name] = engine.locate(name, CLASS_KINDS)
-        return locate_cache[name]
-
-    def references_changed_files(seed_ids: List[str]) -> bool:
-        reachable, pending = set(), list(seed_ids)
+    plans = []
+    candidate_names = set()
+    for endpoint in document.endpoints:
+        seeds = [endpoint.response_schema_id] + [field.schema_id for field in endpoint.parameters
+                                                 + ([endpoint.request_body] if endpoint.request_body else [])]
+        reachable, pending = set(), list(seeds)
         while pending:
             schema_id = pending.pop()
             if not schema_id or schema_id in reachable:
@@ -321,30 +342,29 @@ def affected_endpoints(document: ApiDocument, engine, changed: List[Path]) -> Li
             schema = document.schemas.get(schema_id)
             if schema is None:
                 continue
-            files = {location.path for location in locate(schema.name) if location.path.is_file()}
-            if files & changed_paths:
-                return True
             pending.extend(field.schema_id for field in schema.fields if field.schema_id)
             if schema.parent_schema_id:
                 pending.append(schema.parent_schema_id)
-        return False
+        reachable_names = {document.schemas[schema_id].name for schema_id in reachable
+                           if schema_id in document.schemas}
+        unresolved_names = set(referenced_types(endpoint.response_type))
+        for field in endpoint.parameters + ([endpoint.request_body] if endpoint.request_body else []):
+            unresolved_names.update(referenced_types(field.type_name))
+        unresolved_names -= set(document.classes()) | reachable_names
+        plans.append((endpoint, reachable_names, unresolved_names))
+        candidate_names.update(reachable_names)
+        candidate_names.update(unresolved_names)
+
+    located = engine.locate_many(sorted(candidate_names), CLASS_KINDS)
+    changed_names = {name for name, locations in located.items()
+                     if any(location.path in changed_paths and location.path.is_file()
+                            for location in locations)}
 
     result = []
-    for endpoint in document.endpoints:
+    for endpoint, reachable_names, unresolved_names in plans:
         if Path(endpoint_source_file(endpoint.source)).resolve() in changed_paths:
             result.append(endpoint)
-            continue
-        seeds = [endpoint.response_schema_id] + [field.schema_id for field in endpoint.parameters
-                                                 + ([endpoint.request_body] if endpoint.request_body else [])]
-        if references_changed_files(seeds):
-            result.append(endpoint)
-            continue
-        names = set(referenced_types(endpoint.response_type))
-        for field in endpoint.parameters + ([endpoint.request_body] if endpoint.request_body else []):
-            names.update(referenced_types(field.type_name))
-        if any(location.path in changed_paths
-               for name in sorted(names - set(document.classes()))
-               for location in locate(name)):
+        elif reachable_names & changed_names or unresolved_names & changed_names:
             result.append(endpoint)
     return result
 
@@ -353,7 +373,8 @@ def unresolved_types(endpoints: List[Endpoint], classes: Dict[str, List[Field]],
                      schemas: Optional[Dict[str, Schema]] = None) -> List[str]:
     framework = {"List", "Set", "Map", "Collection", "Iterable", "Optional", "ResponseEntity",
                  "MultipartFile", "HttpServletRequest", "HttpServletResponse", "ServletRequest",
-                 "ServletResponse", "Principal", "BindingResult", "Model", "ModelMap"}
+                 "ServletResponse", "Principal", "BindingResult", "Model", "ModelMap",
+                 "Any", "Union", "Literal"}
     requested = set()
     pending = []
     for endpoint in endpoints:
@@ -1025,55 +1046,58 @@ def main() -> int:
     missing = [str(path) for path in classpath if not path.is_file()]
     if missing:
         parser.error("Classpath JAR does not exist: " + ", ".join(missing))
-    if arguments.changed and arguments.language != "java":
-        parser.error("--changed is currently supported only for --language java")
     if arguments.changed and arguments.endpoint:
         parser.error("--changed cannot be combined with --endpoint")
-    engine = select_engine(roots, enabled=not arguments.no_codegraph) if arguments.language == "java" else None
+    engine = select_engine(roots, enabled=not arguments.no_codegraph)
     if engine and arguments.endpoint and not controller_paths:
         names = endpoint_selector_names(arguments.endpoint)
-        candidates = controller_candidates(engine, names)
-        if candidates:
-            print(f"[{engine.name}] narrowed scan to {len(candidates)} controller file(s) for: " + ", ".join(names),
-                  file=sys.stderr)
-            controller_paths = candidates
-            roots = list(dict.fromkeys(roots + [root for controller in candidates
-                                                for root in resolved_gradle_source_roots(controller)]))
+        if arguments.language == "java":
+            candidates = controller_candidates(engine, names)
+            if candidates:
+                print(f"[{engine.name}] narrowed scan to {len(candidates)} controller file(s) for: " + ", ".join(names),
+                      file=sys.stderr)
+                controller_paths = candidates
+                roots = list(dict.fromkeys(roots + [root for controller in candidates
+                                                    for root in resolved_gradle_source_roots(controller)]))
+        else:
+            located = engine.locate_many(names, METHOD_KINDS)
+            if any(location.path.is_file() and is_route_file(location.path)
+                   for locations in located.values() for location in locations):
+                print(f"[{engine.name}] located route function(s) for: " + ", ".join(names), file=sys.stderr)
     if controller_paths and not classpath:
         classpath = resolved_gradle_jars(controller_paths[0])
-    if arguments.language == "java":
-        scan_roots: List[Path] = list(roots)
-        added_roots: Set[Path] = set()
-        for attempt in range(3):
+    if arguments.language != "java" and classpath:
+        parser.error("--classpath is currently supported only for --language java")
+    scan_roots: List[Path] = list(roots)
+    added_roots: Set[Path] = set()
+    for attempt in range(3):
+        if arguments.language == "java":
             document, classes = build_java_document(arguments, scan_roots, controller_paths, classpath, parser)
-            unresolved = unresolved_types(document.endpoints, classes, document.schemas)
-            if engine is None or not unresolved or attempt == 2:
-                break
-            additions = heal_unresolved_roots(engine, unresolved, set(scan_roots) | added_roots)
-            if not additions:
-                break
-            for root, name in sorted(additions.items(), key=lambda item: str(item[0])):
-                print(f"[{engine.name}] auto-added source root {root} for {name}", file=sys.stderr)
-            added_roots.update(additions)
-            scan_roots.extend(sorted(additions, key=str))
-        if arguments.changed:
-            if engine is None:
-                parser.error("--changed requires a discovery engine; install codegraph "
-                             "(and run `codegraph init`) or the tree-sitter packages "
-                             "(pip3 install tree-sitter tree-sitter-python tree-sitter-java)")
-            affected = affected_endpoints(document, engine, arguments.changed)
-            if not affected:
-                print("No endpoints affected by the changed files")
-                return 0
-            document.endpoints = affected
-            unresolved = unresolved_types(document.endpoints, classes, document.schemas)
-    else:
-        if classpath:
-            parser.error("--classpath is currently supported only for --language java")
-        document = scan_python_document(roots)
-        if arguments.endpoint:
-            select_endpoints(document, arguments.endpoint, parser)
-        classes = document.classes()
+        else:
+            document = scan_python_document(scan_roots)
+            if arguments.endpoint:
+                select_endpoints(document, arguments.endpoint, parser)
+            classes = document.classes()
+        unresolved = unresolved_types(document.endpoints, classes, document.schemas)
+        if engine is None or not unresolved or attempt == 2:
+            break
+        additions = heal_unresolved_roots(engine, unresolved, set(scan_roots) | added_roots, arguments.language)
+        if not additions:
+            break
+        for root, name in sorted(additions.items(), key=lambda item: str(item[0])):
+            print(f"[{engine.name}] auto-added source root {root} for {name}", file=sys.stderr)
+        added_roots.update(additions)
+        scan_roots.extend(sorted(additions, key=str))
+    if arguments.changed:
+        if engine is None:
+            parser.error("--changed requires a discovery engine; install codegraph "
+                         "(and run `codegraph init`) or the tree-sitter packages "
+                         "(pip3 install tree-sitter tree-sitter-python tree-sitter-java)")
+        affected = affected_endpoints(document, engine, arguments.changed)
+        if not affected:
+            print("No endpoints affected by the changed files")
+            return 0
+        document.endpoints = affected
         unresolved = unresolved_types(document.endpoints, classes, document.schemas)
     if unresolved:
         print("Warning: unresolved DTO types: " + ", ".join(unresolved), file=sys.stderr)

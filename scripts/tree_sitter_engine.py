@@ -6,47 +6,115 @@ persistent index and no external CLI — parsing on demand means results are
 always current. When the tree_sitter or grammar packages are not importable,
 create_engine() returns None and engine selection falls through to no engine.
 
-Symbol extraction follows the same approach as the understand-anything plugin's
-per-language extractors: deterministic node-type dispatch over tree-sitter
-trees with name-field capture, never regexes over source text.
-
-locate() first indexes the generator's source roots; when a symbol is missing
-there (the self-heal case, where the missing type lives outside the passed
-roots) it expands once to the enclosing project root (nearest .git ancestor).
+Symbol extraction follows the official tree-sitter tags.scm convention: every
+declaration captures `@name` (the name identifier) paired with
+`@definition.<kind>` (the declaration), and the two are joined per match via
+matches(). The kind suffix becomes the protocol kind. Main queries are vendored
+verbatim from each grammar's upstream tags.scm where one exists; supplementary
+extra.scm files carry what upstream does not capture (the Java package name,
+TypeScript concrete declarations) and are concatenated at load time. Grouped
+matches() is used exactly where pairing is needed.
 """
+import hashlib
 import importlib
+import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from discovery import DiscoveryEngine, SymbolLocation
 
 
-JAVA_CLASS_NODES = {"class_declaration": "class", "interface_declaration": "interface",
-                    "enum_declaration": "enum", "record_declaration": "class"}
-JAVA_METHOD_NODES = {"method_declaration": "method", "constructor_declaration": "method"}
-PYTHON_CLASS_NODES = {"class_definition": "class"}
-PYTHON_FUNCTION_NODES = {"function_definition": "function"}
-
-SOURCE_SUFFIXES = (".java", ".py")
 SKIP_DIRECTORIES = {".git", ".idea", ".gradle", "node_modules", "build", "target",
                     "dist", "__pycache__", ".venv", "venv"}
 
+GRAMMAR_MODULES = {
+    ".java": ("tree_sitter_java", "language", "java"),
+    ".py": ("tree_sitter_python", "language", "python"),
+    ".ts": ("tree_sitter_typescript", "language_typescript", "typescript"),
+    ".tsx": ("tree_sitter_typescript", "language_tsx", "tsx"),
+    ".go": ("tree_sitter_go", "language", "go"),
+    ".php": ("tree_sitter_php", "language_php", "php"),
+}
 
-def load_parsers() -> Dict[str, object]:
-    """Load a tree-sitter parser per supported suffix; missing packages are skipped."""
+# Tag queries live in scripts/queries/<language>/: tags.scm is the main query —
+# vendored verbatim from the grammar's upstream tags.scm where one exists (Go,
+# PHP, TypeScript) or in the same shape for grammars without one (Java,
+# Python) — and optional extra.scm holds supplementary patterns (the Java
+# package capture, the TypeScript concrete declarations the signature-oriented
+# upstream file omits). Adding a language means adding a grammar module, a
+# query directory, and vendoring its upstream tags.scm.
+QUERY_DIRECTORY = Path(__file__).with_name("queries")
+
+SOURCE_SUFFIXES = tuple(GRAMMAR_MODULES)
+
+KIND_PREFIX = "definition."
+PACKAGE_CAPTURE = "package"
+
+CACHE_VERSION = 1
+
+
+def _query_hash(query_texts) -> str:
+    """Cache namespace derived from the loaded query texts; query edits invalidate caches."""
+    return hashlib.sha256(repr(sorted(query_texts)).encode("utf-8")).hexdigest()[:12]
+
+
+def _cache_path(project_root: Path, query_hash: str) -> Path:
+    digest = hashlib.sha256(str(project_root).encode("utf-8")).hexdigest()[:16]
+    return Path(tempfile.gettempdir()) / "api-savior-docs" / "tree-sitter-index" / (digest + "-" + query_hash + ".json")
+
+
+def _matches(query, node) -> List[Dict[str, list]]:
+    """Grouped matches with every capture value normalized to a list.
+
+    Tolerates py-tree-sitter versions before QueryCursor; value normalization
+    absorbs the Node-vs-list difference across versions.
+    """
     try:
-        from tree_sitter import Language, Parser
+        from tree_sitter import QueryCursor
+    except ImportError:
+        matches = query.matches(node)
+    else:
+        matches = QueryCursor(query).matches(node)
+    return [dict((key, value if isinstance(value, list) else [value])
+                 for key, value in captures.items())
+            for _, captures in matches]
+
+
+def _captures(query, node) -> Dict[str, list]:
+    """Flat capture view, for single-capture queries where no pairing is needed."""
+    try:
+        from tree_sitter import QueryCursor
+    except ImportError:
+        return query.captures(node)
+    return QueryCursor(query).captures(node)
+
+
+def load_parsers() -> Dict[str, dict]:
+    """Compile a parser plus its tag query per supported suffix; missing packages or query files are skipped."""
+    try:
+        from tree_sitter import Language, Parser, Query
     except ImportError:
         return {}
-    parsers: Dict[str, object] = {}
-    for suffix, module_name in ((".java", "tree_sitter_java"), (".py", "tree_sitter_python")):
+    engines: Dict[str, dict] = {}
+    for suffix, (module_name, factory_name, query_directory) in GRAMMAR_MODULES.items():
         try:
             module = importlib.import_module(module_name)
-            parsers[suffix] = Parser(Language(module.language()))
+            language = Language(getattr(module, factory_name)())
+            directory = QUERY_DIRECTORY / query_directory
+            text = (directory / "tags.scm").read_text(encoding="utf-8")
+            extra = directory / "extra.scm"
+            if extra.is_file():
+                text += "\n" + extra.read_text(encoding="utf-8")
+            engines[suffix] = {
+                "parser": Parser(language),
+                "tags": Query(language, text),
+                "text": text,
+            }
         except Exception:
             continue
-    return parsers
+    return engines
 
 
 def infer_project_root(roots: List[Path]) -> Path:
@@ -75,47 +143,22 @@ def _text(node, source: bytes) -> str:
     return source[node.start_byte:node.end_byte].decode("utf-8", "replace")
 
 
-def _extract_java(root, source: bytes) -> List[Tuple[str, str, int, str]]:
+def extract_symbols(root, source: bytes, queries: Dict[str, object]) -> List[Tuple[str, str, int, str]]:
+    """Return (kind, name, line, package) tuples per the tags.scm pairing convention."""
+    captures_by_name = _captures(queries["tags"], root)
     package = ""
-    for child in root.children:
-        if child.type == "package_declaration":
-            for part in child.children:
-                if part.type.endswith("identifier"):
-                    package = _text(part, source)
+    package_nodes = captures_by_name.get(PACKAGE_CAPTURE)
+    if package_nodes:
+        package = _text(package_nodes[0], source)
     symbols: List[Tuple[str, str, int, str]] = []
-
-    def visit(node):
-        node_type = node.type
-        kind = JAVA_CLASS_NODES.get(node_type)
-        name_node = node.child_by_field_name("name") if kind or node_type in JAVA_METHOD_NODES else None
-        if kind and name_node is not None:
-            symbols.append((kind, _text(name_node, source), node.start_point[0] + 1, package))
-        elif node_type in JAVA_METHOD_NODES and name_node is not None:
-            symbols.append(("method", _text(name_node, source), node.start_point[0] + 1, package))
-        for child in node.children:
-            visit(child)
-
-    visit(root)
+    for captures in _matches(queries["tags"], root):
+        names = captures.get("name")
+        kinds = [key[len(KIND_PREFIX):] for key in captures if key.startswith(KIND_PREFIX)]
+        if not names or not kinds:
+            continue
+        name_node = names[0]
+        symbols.append((kinds[0], _text(name_node, source), name_node.start_point[0] + 1, package))
     return symbols
-
-
-def _extract_python(root, source: bytes) -> List[Tuple[str, str, int, str]]:
-    symbols: List[Tuple[str, str, int, str]] = []
-
-    def visit(node):
-        kind = PYTHON_CLASS_NODES.get(node.type) or PYTHON_FUNCTION_NODES.get(node.type)
-        if kind:
-            name_node = node.child_by_field_name("name")
-            if name_node is not None:
-                symbols.append((kind, _text(name_node, source), node.start_point[0] + 1, ""))
-        for child in node.children:
-            visit(child)
-
-    visit(root)
-    return symbols
-
-
-EXTRACTORS = {".java": _extract_java, ".py": _extract_python}
 
 
 class TreeSitterEngine(DiscoveryEngine):
@@ -124,15 +167,62 @@ class TreeSitterEngine(DiscoveryEngine):
     name = "tree-sitter"
     capabilities = frozenset({"sync", "source_files", "locate"})
 
-    def __init__(self, roots: List[Path], project_root: Path, parsers: Dict[str, object]):
+    def __init__(self, roots: List[Path], project_root: Path, parsers: Dict[str, dict]):
         # Resolve like the generator does, so located paths always match the
         # roots passed to the scanner (macOS /var vs /private/var symlinks).
         self._roots = [Path(root).resolve() for root in roots]
         self._project_root = Path(project_root).resolve()
         self._parsers = parsers
+        self._query_hash = _query_hash([config["text"] for config in parsers.values()])
         self._index: Dict[str, List[SymbolLocation]] = {}
         self._parsed_paths: Set[Path] = set()
         self._parsed_everywhere = False
+        self._file_cache: Optional[Dict[str, dict]] = None
+        self._cache_dirty = False
+
+    def _load_cache(self) -> Dict[str, dict]:
+        """Per-file extraction cache keyed by mtime+size; any problem means no cache."""
+        if self._file_cache is None:
+            try:
+                data = json.loads(_cache_path(self._project_root, self._query_hash).read_text(encoding="utf-8"))
+                self._file_cache = data.get("files", {}) if data.get("version") == CACHE_VERSION else {}
+            except (OSError, ValueError):
+                self._file_cache = {}
+        return self._file_cache
+
+    def _store_cache(self) -> None:
+        if not self._cache_dirty:
+            return
+        try:
+            path = _cache_path(self._project_root, self._query_hash)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_suffix(".tmp")
+            temporary.write_text(json.dumps({"version": CACHE_VERSION, "files": self._file_cache}),
+                                 encoding="utf-8")
+            temporary.replace(path)
+        except OSError:
+            pass
+        self._cache_dirty = False
+
+    def _file_symbols(self, path: Path, config: Dict[str, object]) -> List[Tuple[str, str, int, str]]:
+        cache = self._load_cache()
+        try:
+            stat = path.stat()
+        except OSError:
+            return []
+        entry = cache.get(str(path))
+        if entry and entry.get("mtime") == stat.st_mtime and entry.get("size") == stat.st_size:
+            return [tuple(item) for item in entry.get("symbols", [])]
+        try:
+            source = path.read_bytes()
+            root_node = config["parser"].parse(source).root_node
+        except OSError:
+            return []
+        symbols = extract_symbols(root_node, source, config)
+        cache[str(path)] = {"mtime": stat.st_mtime, "size": stat.st_size,
+                            "symbols": [list(item) for item in symbols]}
+        self._cache_dirty = True
+        return symbols
 
     def sync(self) -> bool:
         return True
@@ -155,18 +245,13 @@ class TreeSitterEngine(DiscoveryEngine):
             if path in self._parsed_paths:
                 continue
             self._parsed_paths.add(path)
-            parser = self._parsers.get(path.suffix)
-            extractor = EXTRACTORS.get(path.suffix)
-            if parser is None or extractor is None:
+            config = self._parsers.get(path.suffix)
+            if config is None:
                 continue
-            try:
-                source = path.read_bytes()
-                root_node = parser.parse(source).root_node
-            except OSError:
-                continue
-            for kind, symbol_name, line, package in extractor(root_node, source):
+            for kind, symbol_name, line, package in self._file_symbols(path, config):
                 self._index.setdefault(symbol_name, []).append(SymbolLocation(
                     path, line, kind, symbol_name, package))
+        self._store_cache()
         if whole_project:
             self._parsed_everywhere = True
 

@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -347,6 +348,124 @@ class DiscoveryCliTest(unittest.TestCase):
         self.assertEqual(["find", "save"], endpoint_selector_names(["find@POST:/x", "save"]))
 
 
+PYTHON_APP_SOURCE = textwrap.dedent('''\
+    from fastapi import FastAPI
+    from com.example.common.models import OrderModel
+
+    app = FastAPI()
+
+    @app.post("/orders")
+    def create_order() -> OrderModel:
+        return OrderModel()
+''')
+
+PYTHON_MODELS_SOURCE = textwrap.dedent('''\
+    from pydantic import BaseModel
+
+    class OrderModel(BaseModel):
+        order_no: str
+''')
+
+
+class PythonDiscoveryCliTest(unittest.TestCase):
+    def build_fixture(self, root: Path) -> Path:
+        """Build the split FastAPI fixture; returns the models.py file path."""
+        write_source(root, "main/app.py", PYTHON_APP_SOURCE)
+        write_source(root, "common/com/__init__.py", "")
+        write_source(root, "common/com/example/__init__.py", "")
+        write_source(root, "common/com/example/common/__init__.py", "")
+        return write_source(root, "common/com/example/common/models.py", PYTHON_MODELS_SOURCE)
+
+    def test_unresolved_types_self_heal_from_engine(self):
+        from generate_api_docs import python_package_root
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            models = self.build_fixture(root)
+            self.assertEqual(models.parents[3].resolve(), python_package_root(models).resolve())
+            manifest = manifest_for({"OrderModel": [
+                {"path": str(models), "line": 4, "kind": "class", "name": "OrderModel"}]})
+            healed = run_cli(["--language", "python", "--source", str(root / "main"),
+                              "--output", str(root / "healed")], {FAKE_ENV: manifest})
+            self.assertEqual(0, healed.returncode, healed.stderr)
+            self.assertIn("[fake] auto-added source root", healed.stderr)
+            healed_markdown = (root / "healed/api-docs.md").read_text(encoding="utf-8")
+            self.assertIn("order_no", healed_markdown)
+            both = run_cli(["--language", "python", "--source", str(root / "main"),
+                            "--source", str(models.parents[3]), "--output", str(root / "both"),
+                            "--no-codegraph"])
+            self.assertEqual(0, both.returncode, both.stderr)
+            self.assertEqual((root / "both/api-docs.md").read_text(encoding="utf-8"), healed_markdown)
+            unhealed = run_cli(["--language", "python", "--source", str(root / "main"),
+                                "--output", str(root / "unhealed"), "--no-codegraph"])
+            self.assertEqual(0, unhealed.returncode, unhealed.stderr)
+            self.assertIn("Warning: unresolved DTO types: OrderModel", unhealed.stderr)
+
+    def test_changed_regenerates_affected_endpoints(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            models = self.build_fixture(root)
+            manifest = manifest_for({"OrderModel": [
+                {"path": str(models), "line": 4, "kind": "class", "name": "OrderModel"}]})
+            changed_dto = run_cli(["--language", "python", "--source", str(root / "main"),
+                                   "--changed", str(models), "--output-file", str(root / "dto.md")],
+                                  {FAKE_ENV: manifest})
+            self.assertEqual(0, changed_dto.returncode, changed_dto.stderr)
+            markdown = (root / "dto.md").read_text(encoding="utf-8")
+            self.assertIn("create_order", markdown)
+            self.assertIn("order_no", markdown)
+            changed_app = run_cli(["--language", "python", "--source", str(root / "main"),
+                                   "--changed", str(root / "main/app.py"),
+                                   "--output-file", str(root / "app.md")], {FAKE_ENV: manifest})
+            self.assertEqual(0, changed_app.returncode, changed_app.stderr)
+            self.assertIn("create_order", (root / "app.md").read_text(encoding="utf-8"))
+            write_source(root, "main/other.py", "x = 1\n")
+            unchanged = run_cli(["--language", "python", "--source", str(root / "main"),
+                                 "--changed", str(root / "main/other.py"),
+                                 "--output-file", str(root / "empty.md")], {FAKE_ENV: manifest})
+            self.assertEqual(0, unchanged.returncode, unchanged.stderr)
+            self.assertIn("No endpoints affected by the changed files", unchanged.stdout)
+            self.assertFalse((root / "empty.md").exists())
+
+    def test_endpoint_located_note_without_narrowing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_source(root, "main/app.py", PYTHON_APP_SOURCE)
+            app_file = root / "main/app.py"
+            manifest = manifest_for({"create_order": [
+                {"path": str(app_file), "line": 8, "kind": "function", "name": "create_order"}]})
+            narrowed = run_cli(["--language", "python", "--source", str(root / "main"),
+                                "--endpoint", "create_order", "--output", str(root / "narrowed")],
+                               {FAKE_ENV: manifest})
+            self.assertEqual(0, narrowed.returncode, narrowed.stderr)
+            self.assertIn("[fake] located route function(s) for: create_order", narrowed.stderr)
+            plain = run_cli(["--language", "python", "--source", str(root / "main"),
+                             "--endpoint", "create_order", "--output", str(root / "plain"),
+                             "--no-codegraph"])
+            self.assertEqual(0, plain.returncode, plain.stderr)
+            self.assertEqual((root / "plain/api-docs.md").read_text(encoding="utf-8"),
+                             (root / "narrowed/api-docs.md").read_text(encoding="utf-8"))
+
+
+class UnresolvedTypesTest(unittest.TestCase):
+    def test_python_typing_names_are_not_reported_unresolved(self):
+        from api_document_ir import Endpoint
+        from generate_api_docs import unresolved_types
+        endpoint = Endpoint("get", "get", "GET", "/x", [], None, "Union[Widget, Any]", "app.py:1")
+        unresolved = unresolved_types([endpoint], {}, None)
+        self.assertIn("Widget", unresolved)
+        self.assertNotIn("Any", unresolved)
+        self.assertNotIn("Union", unresolved)
+
+
+class FakeEngineBatchTest(unittest.TestCase):
+    def test_locate_many_records_and_batches(self):
+        engine = FakeEngine({"locate": {"A": [{"path": "/tmp/a.py", "line": 1, "kind": "class", "name": "A"}]}})
+        located = engine.locate_many(["A", "B"], CLASS_KINDS)
+        self.assertEqual(["A"], [item.name for item in located["A"]])
+        self.assertEqual([], located["B"])
+        self.assertEqual(["A", "B"], engine.locate_calls)
+
+
 class NullEngineTest(unittest.TestCase):
     def test_source_files_walks_filesystem_and_locate_misses(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -410,6 +529,58 @@ class TreeSitterEngineTest(unittest.TestCase):
             self.assertEqual(sorted([java_file.resolve(), state_file.resolve()], key=str),
                              engine.source_files(".java"))
             self.assertEqual([], engine.source_files(".nonexistent"))
+
+    def test_locates_typescript_go_and_php_symbols(self):
+        from tree_sitter_engine import create_engine
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ts_file = write_source(root, "services/OrderService.ts",
+                                   "class OrderService { save(): void {} }\n"
+                                   "interface Handler { handle(): void }\n"
+                                   "export function createOrder() {}\n")
+            go_file = write_source(root, "orders/orders.go",
+                                   "package orders\n\ntype Order struct { No string }\n\n"
+                                   "func Create() {}\nfunc (o Order) Save() {}\n")
+            php_file = write_source(root, "lib/Order.php",
+                                    "<?php\nnamespace App;\nclass Order { public function save(): void {} }\n"
+                                    "function create_order() {}\ninterface Handler {}\n")
+            engine = create_engine([root])
+            self.assertIsNotNone(engine)
+            self.assertEqual([ts_file.resolve()],
+                             [item.path for item in engine.locate("OrderService", CLASS_KINDS)])
+            self.assertEqual([ts_file.resolve()],
+                             [item.path for item in engine.locate("createOrder", ("function",))])
+            self.assertIn(ts_file.resolve(),
+                          [item.path for item in engine.locate("Handler", CLASS_KINDS)])
+            self.assertEqual([go_file.resolve()],
+                             [item.path for item in engine.locate("Create", ("function",))])
+            self.assertEqual([go_file.resolve()],
+                             [item.path for item in engine.locate("Order", ("type",))])
+            self.assertEqual([go_file.resolve()],
+                             [item.path for item in engine.locate("Save", ("method",))])
+            self.assertEqual([php_file.resolve()],
+                             [item.path for item in engine.locate("Order", CLASS_KINDS)])
+            self.assertEqual([php_file.resolve()],
+                             [item.path for item in engine.locate("create_order", ("function",))])
+            self.assertEqual([], engine.locate("Missing", CLASS_KINDS))
+
+    def test_file_cache_persists_and_invalidates_on_change(self):
+        from tree_sitter_engine import _cache_path, create_engine, infer_project_root
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = write_source(root, "com/example/Result.java", COMMON_SOURCE)
+            engine = create_engine([root])
+            self.assertIsNotNone(engine)
+            self.assertEqual([source.resolve()],
+                             [item.path for item in engine.locate("Result", CLASS_KINDS)])
+            self.assertTrue(_cache_path(infer_project_root([root]).resolve(),
+                                        engine._query_hash).is_file())
+            write_source(root, "com/example/Result.java", COMMON_SOURCE + "\nclass Extra { }\n")
+            engine2 = create_engine([root])
+            self.assertEqual([source.resolve()],
+                             [item.path for item in engine2.locate("Extra", CLASS_KINDS)])
+            self.assertEqual([source.resolve()],
+                             [item.path for item in engine2.locate("Result", CLASS_KINDS)])
 
     def test_locate_expands_to_project_root_for_types_outside_roots(self):
         from tree_sitter_engine import create_engine

@@ -70,18 +70,18 @@ FastAPI 源码使用 `--language python`。多个源码根目录可重复传入 
 
 ## 可选：代码发现引擎（codegraph / tree-sitter）
 
-生成器可以自动利用代码发现引擎完成三件事，无需改变调用方式：
+生成器可以自动利用代码发现引擎完成三件事，无需改变调用方式（Java 与 Python 均支持）：
 
-- `--endpoint` 不再需要先传 `--controller`：按接口方法名定位 Controller 文件，缩小扫描范围；
-- 报出未解析 DTO 类型时，自动反查类型定义文件、推导其源码根并重跑（最多 2 轮，stderr 以 `[引擎名]` 前缀说明补了什么）；
-- `--changed <改动文件>`：只重新生成受改动影响的接口段落，覆盖 Controller 源文件本身与 DTO 的传递引用（例如接口返回 `PageData<Order>`，改 `Order.java` 同样命中）。
+- `--endpoint` 不再需要先传 `--controller`：按接口方法名定位声明文件。Java 会据此缩小扫描范围；Python 的模块名由传入源码根决定，为保证输出一致仅输出定位提示、不收窄；
+- 报出未解析 DTO 类型时，自动反查类型定义文件、推导其源码根并重跑（最多 2 轮，stderr 以 `[引擎名]` 前缀说明补了什么；Python 包根按 `__init__.py` 链推导）；
+- `--changed <改动文件>`：只重新生成受改动影响的接口段落，覆盖 Controller/路由源文件本身与 DTO 的传递引用（例如接口返回 `PageData<Order>`，改 `Order.java` 同样命中）。
 
 引擎按可用性自动选择，互为备选：
 
-1. **codegraph**（推荐）：仓库含 `.codegraph/` 索引且安装了 [codegraph CLI](https://www.npmjs.com/package/@colbymchenry/codegraph)，先增量 `sync` 再查询，覆盖整个项目；
-2. **tree-sitter 回退**：安装可选包 `pip3 install tree-sitter tree-sitter-python tree-sitter-java` 后生效。无常驻索引，运行时按需解析源码建内存符号表；项目边界取最近的 `.git` 祖先目录。两者都不可用时不启用任何引擎。
+1. **codegraph**（推荐）：仓库含 `.codegraph/` 索引且安装了 [codegraph CLI](https://www.npmjs.com/package/@colbymchenry/codegraph)，先增量 `sync` 再查询，覆盖整个项目；`--changed` 的批量定位在引擎内并行执行；
+2. **tree-sitter 回退**：安装可选包 `pip3 install tree-sitter tree-sitter-python tree-sitter-java tree-sitter-typescript tree-sitter-go tree-sitter-php` 后生效。符号索引覆盖 `.java` / `.py` / `.ts` / `.tsx` / `.go` / `.php`，主查询逐字 vendor 自各语法上游仓库的 tags.scm；项目边界取最近的 `.git` 祖先目录；按文件的 mtime+size 缓存放系统临时目录，查询文本变更自动失效。两者都不可用时不启用任何引擎。
 
-发现引擎只回答"文件与符号在哪"。字段、wire 名、枚举等语义仍由源码解析产生——开启引擎后，同样的输入文件集输出与手工传入等价 `--source`/`--controller` 时逐字节一致。`--no-codegraph` 显式关闭整个发现层。
+发现引擎只回答"文件与符号在哪"。字段、wire 名、枚举等语义仍由源码解析产生——文档生成适配器目前为 Java（Spring/Feign）与 Python（FastAPI），新语言接入引擎后即可被定位，待对应框架适配器出现后即可生成文档。`--no-codegraph` 显式关闭整个发现层。
 
 ## 生成结果
 
