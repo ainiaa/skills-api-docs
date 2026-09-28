@@ -1,0 +1,29 @@
+name: Archify acceptance
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  archify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: tt-a1i/archify
+          ref: c826e6c3a7abad19c0f3cd1ca57207d54b1ad8de # v2.16.0
+          path: .archify
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify pinned Archify checkout
+        run: test "$(git -C .archify rev-parse HEAD)" = c826e6c3a7abad19c0f3cd1ca57207d54b1ad8de
+      - name: Run official Archify acceptance test
+        env:
+          ARCHIFY_OFFICIAL_CLI: ${{ github.workspace }}/.archify/archify/bin/archify.mjs
+        run: python3 scripts/test_architecture.py

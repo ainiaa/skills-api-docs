@@ -21,7 +21,19 @@ python3 scripts/generate_architecture.py validate --source /path/to/repo --ir /t
 python3 scripts/generate_architecture.py render --source /path/to/repo --ir /tmp/architecture-ir.json --output /tmp/architecture
 ```
 
-`context` 不设模块、类或文件数量上限，列出所有源码文件及扫描到的声明、路由、配置键和表名线索；声明扫描复用现有 tree-sitter 解析能力（未安装可选语法包时退回逐行候选扫描）。已有 `.ua/knowledge-graph.json` 与 `domain-graph.json` 时也会提供给 agent，并报告提交版本不一致。源码行校验能拦截不存在的引用；新鲜图谱或现有 CodeGraph 索引还会核对关键类的位置。业务能力和关系仍是带证据的推断，需审阅 `INFERRED`／`AMBIGUOUS` 项。`render` 输出 Mermaid、PlantUML、draw.io、验证过的 IR 和 Archify schema-v1 JSON；系统已安装官方 `archify` CLI 时还会生成 HTML。新 Skill 的详细契约见[架构 IR](skills/understand-arch/references/architecture-ir.md)。
+`context` 不设模块、类或文件数量上限，列出所有源码文件及扫描到的声明、路由、配置键和表名线索；声明扫描复用现有 tree-sitter 解析能力（未安装可选语法包时退回逐行候选扫描）。已有 `.ua/knowledge-graph.json` 与 `domain-graph.json` 时也会提供给 agent，并报告提交版本不一致。源码行校验能拦截不存在的引用；新鲜图谱或现有 CodeGraph 索引还会核对关键类的位置。业务能力和关系仍是带证据的推断，需审阅 `INFERRED`／`AMBIGUOUS` 项。`render` 输出 Mermaid、PlantUML、draw.io、验证过的 IR 和 Archify schema-v1 JSON；系统已安装官方 `archify` CLI 时还会生成 HTML。Archify 交付失败时命令返回非零，并清理旧 HTML，避免与新 IR 混用。新 Skill 的详细契约见[架构 IR](skills/understand-arch/references/architecture-ir.md)。
+
+### Archify 官方验收
+
+需要声称 Archify 成品通过官方验收时，传入固定版本 CLI 的路径：
+
+```bash
+python3 scripts/generate_architecture.py render \
+  --source /path/to/repo --ir /tmp/architecture-ir.json --output /tmp/architecture \
+  --archify-cli /path/to/archify/archify/bin/archify.mjs
+```
+
+此模式要求 CLI 可用，并调用官方 `deliver --quality showcase --json`。成功结果中的 `archifyReceipt` 包含官方校验和成品检查回执；失败返回非零状态。CI 的 [Archify 验收工作流](.github/workflows/archify-acceptance.yml)固定官方 [v2.16.0](https://github.com/tt-a1i/archify/releases/tag/v2.16.0) 对应提交 `c826e6c3a7abad19c0f3cd1ca57207d54b1ad8de`，用真实 CLI 测试含多个业务域、两张表、外部系统和关系的适配器输出。官方 `deliver` 包含验证、渲染及最终成品检查；它不证明业务域解释正确，`INFERRED`／`AMBIGUOUS` 仍需人工审阅。
 
 ## 3 步快速开始
 

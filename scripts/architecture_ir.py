@@ -139,8 +139,12 @@ def _check_evidence(value, root, label, problems):
         if not isinstance(relative, str) or not relative or not isinstance(line, int) or isinstance(line, bool) or line < 1 or not isinstance(quote, str) or not quote.strip():
             problems.append(f"{target}: path, positive line, and non-empty quote are required")
             continue
-        path = (root / relative).resolve()
-        if os.path.commonpath((str(root), str(path))) != str(root) or not path.is_file():
+        try:
+            path = (root / relative).resolve()
+            valid_path = os.path.commonpath((str(root), str(path))) == str(root) and path.is_file()
+        except (OSError, ValueError):
+            valid_path = False
+        if not valid_path:
             problems.append(f"{target}: path is outside source root or missing: {relative}")
             continue
         try:
@@ -165,12 +169,20 @@ def _class_declared(lines, name):
                any(match[1] == name for match in GO_DECLARATION.finditer(line)) for line in lines)
 
 
+def _xml_safe(value):
+    return all(char in "\t\n\r" or 0x20 <= ord(char) <= 0xD7FF or
+               0xE000 <= ord(char) <= 0xFFFD or 0x10000 <= ord(char) <= 0x10FFFF
+               for char in value)
+
+
 def _claim(item, field, root, label, problems, literal=False, declaration=False):
     if not isinstance(item, dict) or not isinstance(item.get(field), str) or not item[field].strip():
         problems.append(f"{label}: non-empty {field} is required")
         return
+    if not _xml_safe(item[field]):
+        problems.append(f"{label}: {field} contains characters unsupported by XML")
     status = item.get("provenance")
-    if status not in PROVENANCE:
+    if not isinstance(status, str) or status not in PROVENANCE:
         problems.append(f"{label}: provenance must be EXTRACTED, INFERRED, or AMBIGUOUS")
     lines = _check_evidence(item.get("evidence"), root, label, problems)
     if status == "EXTRACTED" and not literal and lines and not any(item[field] in line for line in lines):
@@ -191,6 +203,8 @@ def validate_architecture(ir, root):
         return ["IR version must be 1"]
     if not isinstance(ir.get("summary"), str) or not ir["summary"].strip():
         problems.append("summary must be non-empty")
+    elif not _xml_safe(ir["summary"]):
+        problems.append("summary contains characters unsupported by XML")
     domains = ir.get("domains")
     if not isinstance(domains, list) or not domains:
         return problems + ["domains must be a non-empty list"]
@@ -212,7 +226,9 @@ def validate_architecture(ir, root):
         for key in ("name", "responsibility"):
             if not isinstance(domain.get(key), str) or not domain[key].strip():
                 problems.append(f"{label}: {key} must be non-empty")
-        if domain.get("provenance") not in {"INFERRED", "AMBIGUOUS"}:
+            elif not _xml_safe(domain[key]):
+                problems.append(f"{label}: {key} contains characters unsupported by XML")
+        if not isinstance(domain.get("provenance"), str) or domain["provenance"] not in {"INFERRED", "AMBIGUOUS"}:
             problems.append(f"{label}: domain provenance must be INFERRED or AMBIGUOUS")
         _check_evidence(domain.get("evidence"), root, label, problems)
         for key, field, literal in (("capabilities", "text", False), ("keyClasses", "name", True), ("tables", "name", True)):
@@ -248,7 +264,9 @@ def validate_architecture(ir, root):
                 continue
             if key == "externalSystems":
                 _claim(item, "name", root, label, problems)
-                if item.get("domain") not in ids:
+                if "kind" in item and (not isinstance(item["kind"], str) or not item["kind"].strip() or not _xml_safe(item["kind"])):
+                    problems.append(f"{label}: kind must be non-empty XML-safe text")
+                if not isinstance(item.get("domain"), str) or item["domain"] not in ids:
                     problems.append(f"{label}: domain references missing domain {item.get('domain')}")
                 via = item.get("via")
                 if not isinstance(via, list) or not via or any(not isinstance(name, str) or not name.strip() for name in via):
@@ -263,6 +281,6 @@ def validate_architecture(ir, root):
                 if item.get("provenance") == "EXTRACTED":
                     problems.append(f"{label}: relation provenance must be INFERRED or AMBIGUOUS")
                 for side in ("from", "to"):
-                    if item.get(side) not in ids:
+                    if not isinstance(item.get(side), str) or item[side] not in ids:
                         problems.append(f"{label}: {side} references missing domain {item.get(side)}")
     return problems

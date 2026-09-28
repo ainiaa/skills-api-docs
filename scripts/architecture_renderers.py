@@ -18,7 +18,7 @@ def render_mermaid(ir):
         capabilities = "<br/>".join("· " + _mermaid(item["text"]) for item in domain["capabilities"])
         lines.append(f'    {domain_id}["{_mermaid(domain["name"])}<br/>{capabilities}"]')
         for index, table in enumerate(domain["tables"]):
-            table_id = f'{domain_id}_T{index}'
+            table_id = f'T_{domain["id"]}_{index}'
             lines.append(f'    {table_id}[("{_mermaid(table["name"])}")]')
             lines.append(f"    {domain_id} --> {table_id}")
     lines.append("  end")
@@ -37,7 +37,7 @@ def render_plantuml(ir):
         label = _plantuml(domain["name"]) + ("\\n" + capabilities if capabilities else "")
         lines.append(f'component "{label}" as D_{domain["id"]}')
         for index, table in enumerate(domain["tables"]):
-            table_id = f'D_{domain["id"]}_T{index}'
+            table_id = f'T_{domain["id"]}_{index}'
             lines.append(f'database "{_plantuml(table["name"])}" as {table_id}')
             lines.append(f'D_{domain["id"]} --> {table_id}')
     for index, external in enumerate(ir["externalSystems"]):
@@ -59,7 +59,7 @@ def render_drawio(ir):
         x, y = 80 + (index % 3) * 340, 100 + (index // 3) * 270
         cells.append(f'<mxCell id="{cell_id}" value="{xml_escape(label, quote=True)}" style="rounded=1;whiteSpace=wrap;html=0;" vertex="1" parent="1"><mxGeometry x="{x}" y="{y}" width="270" height="150" as="geometry"/></mxCell>')
         for table_index, table in enumerate(domain["tables"]):
-            table_id = f"{cell_id}_T{table_index}"
+            table_id = f'T_{domain["id"]}_{table_index}'
             tx, ty = x + table_index * 150, y + 175
             cells.append(f'<mxCell id="{table_id}" value="{xml_escape(table["name"], quote=True)}" style="shape=cylinder3;whiteSpace=wrap;html=0;" vertex="1" parent="1"><mxGeometry x="{tx}" y="{ty}" width="130" height="55" as="geometry"/></mxCell>')
             cells.append(f'<mxCell id="table_{cell_id}_{table_index}" edge="1" parent="1" source="{cell_id}" target="{table_id}"><mxGeometry relative="1" as="geometry"/></mxCell>')
@@ -77,24 +77,30 @@ def render_archify(ir):
     components = []
     connections = []
     count = len(ir["domains"])
-    cols = max(1, min(12, max(count, len(ir["externalSystems"]))))
+    table_count = sum(len(domain["tables"]) for domain in ir["domains"])
+    cols = max(1, min(12, max(count, len(ir["externalSystems"]), table_count)))
     external_rows = (len(ir["externalSystems"]) + cols - 1) // cols
     domain_row = external_rows + (1 if external_rows else 0)
+    domain_rows = (count + cols - 1) // cols
+    table_position = 0
     for index, domain in enumerate(ir["domains"]):
-        components.append({"id": domain["id"], "type": "backend", "label": domain["name"],
+        domain_id = "domain_" + domain["id"]
+        components.append({"id": domain_id, "type": "backend", "label": domain["name"],
                            "sublabel": " / ".join(item["text"] for item in domain["capabilities"]),
                            "row": domain_row + index // cols, "col": index % cols})
         for table_index, table in enumerate(domain["tables"]):
-            table_id = f'{domain["id"]}_table_{table_index}'
+            table_id = f'table_{domain["id"]}_{table_index}'
             components.append({"id": table_id, "type": "database", "label": table["name"],
-                               "row": domain_row + (count - 1) // cols + 2 + index // cols, "col": index % cols})
-            connections.append({"from": domain["id"], "to": table_id})
+                               "row": domain_row + domain_rows + 1 + table_position // cols,
+                               "col": table_position % cols})
+            connections.append({"from": domain_id, "to": table_id})
+            table_position += 1
     for index, external in enumerate(ir["externalSystems"]):
         components.append({"id": f"external_{index}", "type": "external", "label": external["name"],
                            "row": index // cols, "col": index % cols})
-        connections.append({"from": external["domain"], "to": f"external_{index}", "label": external.get("kind", "external")})
+        connections.append({"from": "domain_" + external["domain"], "to": f"external_{index}", "label": external.get("kind", "external")})
     for relation in ir["relations"]:
-        connections.append({"from": relation["from"], "to": relation["to"], "label": relation["label"]})
+        connections.append({"from": "domain_" + relation["from"], "to": "domain_" + relation["to"], "label": relation["label"]})
     return {"schema_version": 1, "diagram_type": "architecture", "meta": {"title": ir["summary"]},
             "layout": {"mode": "grid", "cols": cols, "cellW": 280, "cellH": 110, "gapX": 70, "gapY": 90},
             "components": components, "connections": connections}

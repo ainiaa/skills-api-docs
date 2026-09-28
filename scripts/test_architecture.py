@@ -1,5 +1,7 @@
 import json
+import copy
 import os
+import re
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -111,7 +113,75 @@ class ArchitectureTests(unittest.TestCase):
         self.assertIn("<mxfile", render_drawio(self.ir))
         archify = render_archify(self.ir)
         self.assertEqual(archify["schema_version"], 1)
-        self.assertEqual(archify["components"][0]["id"], "orders")
+        self.assertEqual(archify["components"][0]["id"], "domain_orders")
+
+    def test_generated_node_ids_remain_unique_when_domain_ids_resemble_generated_ids(self):
+        (self.root / "tables.sql").write_text("CREATE TABLE alpha\n", encoding="utf-8")
+        self.ir["domains"][0]["tables"] = [{
+            "name": "alpha", "provenance": "EXTRACTED",
+            "evidence": [{"path": "tables.sql", "line": 1, "quote": "alpha"}],
+        }]
+        for domain_id in ("orders_T0", "orders_table_0", "external_0"):
+            domain = copy.deepcopy(self.ir["domains"][0])
+            domain.update(id=domain_id, name=domain_id, tables=[])
+            self.ir["domains"].append(domain)
+        (self.root / "src" / "EbsClient.java").write_text("interface EbsClient {}\n", encoding="utf-8")
+        self.ir["externalSystems"] = [{
+            "name": "EBS", "kind": "Feign", "via": ["EbsClient"], "domain": "orders",
+            "provenance": "INFERRED",
+            "evidence": [{"path": "src/EbsClient.java", "line": 1, "quote": "interface EbsClient"}],
+        }]
+        self.assertEqual(validate_architecture(self.ir, self.root), [])
+        cells = [cell.attrib["id"] for cell in ET.fromstring(render_drawio(self.ir)).iter("mxCell")]
+        self.assertEqual(len(cells), len(set(cells)))
+        mermaid_ids = re.findall(r'^\s+([DTE][A-Za-z0-9_]*)\[', render_mermaid(self.ir), re.MULTILINE)
+        plantuml_ids = re.findall(r'\bas ([DTE][A-Za-z0-9_]*)$', render_plantuml(self.ir), re.MULTILINE)
+        for ids in (mermaid_ids, plantuml_ids):
+            self.assertEqual(len(ids), len(set(ids)))
+            self.assertIn("D_orders_T0", ids)
+            self.assertIn("T_orders_0", ids)
+        components = render_archify(self.ir)["components"]
+        ids = [component["id"] for component in components]
+        self.assertEqual(len(ids), len(set(ids)))
+
+    def test_archify_places_each_table_in_a_distinct_grid_cell(self):
+        (self.root / "tables.sql").write_text("CREATE TABLE alpha\nCREATE TABLE beta\n", encoding="utf-8")
+        self.ir["domains"][0]["tables"] = [
+            {"name": name, "provenance": "EXTRACTED",
+             "evidence": [{"path": "tables.sql", "line": line, "quote": name}]}
+            for line, name in enumerate(("alpha", "beta"), 1)
+        ]
+        self.assertEqual(validate_architecture(self.ir, self.root), [])
+        components = render_archify(self.ir)["components"]
+        positions = [(component["row"], component["col"]) for component in components]
+        self.assertEqual(len(positions), len(set(positions)))
+
+    def test_validation_rejects_renderer_unsafe_values_without_raising(self):
+        self.ir["domains"][0]["name"] = "bad\x00label"
+        self.assertTrue(any("name" in problem for problem in validate_architecture(self.ir, self.root)))
+        self.ir["domains"][0]["name"] = "orders"
+        (self.root / "src" / "EbsClient.java").write_text("interface EbsClient {}\n", encoding="utf-8")
+        self.ir["externalSystems"] = [{
+            "name": "EBS", "kind": None, "via": ["EbsClient"], "domain": "orders",
+            "provenance": "INFERRED",
+            "evidence": [{"path": "src/EbsClient.java", "line": 1, "quote": "interface EbsClient"}],
+        }]
+        self.assertTrue(any("kind" in problem for problem in validate_architecture(self.ir, self.root)))
+        self.ir["externalSystems"][0]["kind"] = "Feign"
+        self.ir["externalSystems"][0]["domain"] = []
+        self.assertTrue(any("domain" in problem for problem in validate_architecture(self.ir, self.root)))
+        self.ir["externalSystems"] = []
+        self.ir["relations"] = [{"from": [], "to": "orders", "label": "calls", "provenance": "INFERRED",
+                                "evidence": [{"path": "src/OrderController.java", "line": 3, "quote": "createOrder"}]}]
+        self.assertTrue(any("from" in problem for problem in validate_architecture(self.ir, self.root)))
+
+    def test_validation_reports_malformed_evidence_path(self):
+        self.ir["domains"][0]["evidence"][0]["path"] = "\x00"
+        try:
+            problems = validate_architecture(self.ir, self.root)
+        except ValueError as error:
+            self.fail(f"validation raised instead of reporting the path: {error}")
+        self.assertTrue(any("path" in problem for problem in problems), problems)
 
     def test_renderer_escapes_user_labels_and_rejects_unsafe_ids(self):
         self.ir["domains"][0]["name"] = 'Orders & <invoices> "today"'
@@ -204,6 +274,85 @@ class ArchitectureTests(unittest.TestCase):
         invalid = subprocess.run(command, text=True, capture_output=True)
         self.assertNotEqual(invalid.returncode, 0)
         self.assertEqual((output / "architecture.ir.json").read_text(encoding="utf-8"), before)
+
+    def test_archify_failure_does_not_leave_stale_html(self):
+        ir_path = self.root / "ir.json"
+        output = self.root / "output"
+        ir_path.write_text(json.dumps(self.ir), encoding="utf-8")
+        archify = self.root / "archify"
+        archify.write_text(
+            '#!/bin/sh\n'
+            'if [ "$1" != deliver ]; then echo "expected deliver" >&2; exit 2; fi\n'
+            'if [ "$FAIL_ARCHIFY" = 1 ]; then echo rejected >&2; exit 1; fi\n'
+            'printf first-render > "$4"\n'
+            'if [ "$BAD_RECEIPT" = 1 ]; then printf "{\\"ok\\":true,\\"command\\":\\"deliver\\",\\"validation\\":[]}"; exit 0; fi\n'
+            'printf "{\\"ok\\":true,\\"command\\":\\"deliver\\",\\"validation\\":{\\"checksPassed\\":9,\\"checkCount\\":9,\\"compositionProfile\\":\\"showcase\\",\\"compositionStatus\\":\\"pass\\",\\"errors\\":0,\\"warnings\\":0}}"\n',
+            encoding="utf-8")
+        archify.chmod(0o755)
+        command = [sys.executable, str(Path(__file__).with_name("generate_architecture.py")),
+                   "render", "--source", str(self.root), "--ir", str(ir_path), "--output", str(output)]
+        environment = dict(os.environ, PATH=str(self.root) + os.pathsep + os.environ["PATH"])
+        first = subprocess.run(command, text=True, capture_output=True, env=environment)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertTrue(json.loads(first.stdout).get("archifyRendered"))
+        self.assertTrue((output / "architecture.archify.html").is_file())
+        self.ir["summary"] = "updated"
+        ir_path.write_text(json.dumps(self.ir), encoding="utf-8")
+        failed = subprocess.run(command, text=True, capture_output=True,
+                                env=dict(environment, FAIL_ARCHIFY="1"))
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertFalse(json.loads(failed.stdout).get("archifyRendered", True))
+        self.assertFalse((output / "architecture.archify.html").exists())
+        self.assertEqual(json.loads((output / "architecture.ir.json").read_text(encoding="utf-8"))["summary"], "updated")
+        malformed = subprocess.run(command, text=True, capture_output=True,
+                                   env=dict(environment, BAD_RECEIPT="1"))
+        self.assertNotEqual(malformed.returncode, 0)
+        self.assertFalse((output / "architecture.archify.html").exists())
+
+    @unittest.skipUnless(os.environ.get("ARCHIFY_OFFICIAL_CLI"), "official Archify CLI is not configured")
+    def test_official_archify_validates_and_checks_adapter_output(self):
+        (self.root / "tables.sql").write_text("CREATE TABLE orders\nCREATE TABLE order_items\n", encoding="utf-8")
+        self.ir["summary"] = "Order system"
+        self.ir["domains"][0]["name"] = "Orders"
+        self.ir["domains"][0]["capabilities"][0]["text"] = "Create orders"
+        self.ir["domains"][0]["tables"] = [
+            {"name": name, "provenance": "EXTRACTED",
+             "evidence": [{"path": "tables.sql", "line": line, "quote": name}]}
+            for line, name in enumerate(("orders", "order_items"), 1)
+        ]
+        billing = copy.deepcopy(self.ir["domains"][0])
+        billing.update(id="billing", name="Billing", tables=[])
+        self.ir["domains"].append(billing)
+        (self.root / "src" / "EbsClient.java").write_text("interface EbsClient {}\n", encoding="utf-8")
+        self.ir["externalSystems"] = [{
+            "name": "ERP", "kind": "REST", "via": ["EbsClient"], "domain": "orders",
+            "provenance": "INFERRED",
+            "evidence": [{"path": "src/EbsClient.java", "line": 1, "quote": "interface EbsClient"}],
+        }]
+        self.ir["relations"] = [{
+            "from": "orders", "to": "billing", "label": "charge", "provenance": "INFERRED",
+            "evidence": [{"path": "src/OrderController.java", "line": 3, "quote": "createOrder"}],
+        }]
+        ir_path = self.root / "ir.json"
+        ir_path.write_text(json.dumps(self.ir), encoding="utf-8")
+        output = self.root / "output"
+        archify = os.environ["ARCHIFY_OFFICIAL_CLI"]
+        command = [sys.executable, str(Path(__file__).with_name("generate_architecture.py")),
+                   "render", "--source", str(self.root), "--ir", str(ir_path), "--output", str(output),
+                   "--archify-cli", archify]
+        rendered = subprocess.run(command, text=True, capture_output=True)
+        self.assertEqual(rendered.returncode, 0, rendered.stdout + rendered.stderr)
+        result = json.loads(rendered.stdout)
+        self.assertTrue(result["archifyRendered"])
+        self.assertEqual(result["archifyReceipt"]["validation"]["compositionStatus"], "pass")
+        self.assertEqual(result["archifyReceipt"]["validation"]["compositionProfile"], "showcase")
+        specification = output / "architecture.archify.json"
+        html = output / "architecture.archify.html"
+        for args in (("validate", "architecture", str(specification), "--quality", "showcase", "--json"),
+                     ("check", str(html))):
+            checked = subprocess.run([archify, *args], text=True, capture_output=True)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+            self.assertTrue(json.loads(checked.stdout)["ok"])
 
 
 if __name__ == "__main__":
