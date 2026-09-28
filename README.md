@@ -1,8 +1,27 @@
-# API Savior Docs
+# API Savior Docs 与 Understand Arch
 
-面向 Codex 的 API 文档 Skill：从 Java/Spring MVC、Feign 或 Python/FastAPI 源码生成 Markdown 文档、Postman Collection 和 cURL 示例，无需启动 IntelliJ IDEA。
+本仓库包含两个面向 Codex 的 Skill：`api-savior-docs` 从 Java/Spring MVC、Feign 或 Python/FastAPI 源码生成接口文档；`understand-arch` 从源码证据起草和校验架构 IR，再生成多种架构图。
 
-当前发布版本：[0.1.0](VERSION)。未发布改动见 [变更日志](CHANGELOG.md) 的 Unreleased。
+当前开发版本：[0.3.0-dev](VERSION)。未发布改动见[变更日志](CHANGELOG.md)。
+
+## Understand Arch
+
+`skills/understand-arch/SKILL.md` 是独立入口，API 文档的 `ApiDocument` IR 和生成器保持原有用途。安装新 Skill：
+
+```bash
+bash install-arch.sh
+bash install-arch.sh --doctor
+```
+
+可在 Codex 中请求“用 `$understand-arch` 分析这个仓库的业务域并生成架构图”。Skill 会让 agent 结合代码上下文生成带源码行证据的 IR，再调用确定性校验和渲染脚本。无模型的 CLI 也可独立使用：
+
+```bash
+python3 scripts/generate_architecture.py context --source /path/to/repo --output /tmp/arch-context.json
+python3 scripts/generate_architecture.py validate --source /path/to/repo --ir /tmp/architecture-ir.json
+python3 scripts/generate_architecture.py render --source /path/to/repo --ir /tmp/architecture-ir.json --output /tmp/architecture
+```
+
+`context` 不设模块、类或文件数量上限，列出所有源码文件及扫描到的声明、路由、配置键和表名线索；声明扫描复用现有 tree-sitter 解析能力（未安装可选语法包时退回逐行候选扫描）。已有 `.ua/knowledge-graph.json` 与 `domain-graph.json` 时也会提供给 agent，并报告提交版本不一致。源码行校验能拦截不存在的引用；新鲜图谱或现有 CodeGraph 索引还会核对关键类的位置。业务能力和关系仍是带证据的推断，需审阅 `INFERRED`／`AMBIGUOUS` 项。`render` 输出 Mermaid、PlantUML、draw.io、验证过的 IR 和 Archify schema-v1 JSON；系统已安装官方 `archify` CLI 时还会生成 HTML。新 Skill 的详细契约见[架构 IR](skills/understand-arch/references/architecture-ir.md)。
 
 ## 3 步快速开始
 
@@ -104,7 +123,7 @@ FastAPI 源码使用 `--language python`。多个源码根目录可重复传入 
 
 ```bash
 cd scripts
-python3 -m unittest test_generate_api_docs test_discovery test_install
+python3 -m unittest test_generate_api_docs test_discovery test_install test_architecture test_install_arch
 ```
 
 测试覆盖 Java 与 Python 解析、文档生成，以及发现引擎的定位、自愈与增量再生（通过注入的 FakeEngine，无需安装 codegraph）。修改版本或用户可见行为时，同步更新 `VERSION` 与 [CHANGELOG.md](CHANGELOG.md)。修改 Skill 入口后，还应运行 Codex `skill-creator` 的 `quick_validate.py` 校验元数据和目录结构。

@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+- 新增独立的 `understand-arch` Skill 与 CLI：无数量截断的源码上下文、逐条源码行证据校验，以及 Mermaid、PlantUML、draw.io、Archify schema-v1 输出；安装与 API 文档 Skill 分离。
+- 架构 IR 与 API Document IR 独立，保留来源状态 `EXTRACTED`／`INFERRED`／`AMBIGUOUS`；校验失败时不写新图。
+
 ## [0.2.0] - 2026-09-27
 
 - tree-sitter 回退引擎的语言覆盖扩展至 TypeScript（`.ts`/`.tsx`）、Go、PHP：主查询逐字 vendor 自各语法上游仓库的 tags.scm 并注明来源与版本，TypeScript 以补充查询覆盖上游签名导向查询缺失的具体类/函数/枚举声明；全部查询外置为 `scripts/queries/<语言>/` 下的文件。文档生成适配器仍为 Java 与 Python，新语言的符号已可被引擎定位。
