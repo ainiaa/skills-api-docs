@@ -309,6 +309,91 @@ class ArchitectureTests(unittest.TestCase):
         self.assertNotEqual(malformed.returncode, 0)
         self.assertFalse((output / "architecture.archify.html").exists())
 
+    def test_official_renderer_gate_requires_svg_and_cleans_failed_output(self):
+        ir_path = self.root / "ir.json"
+        ir_path.write_text(json.dumps(self.ir), encoding="utf-8")
+        output = self.root / "output"
+        engine = self.root / "engine"
+        engine.write_text(
+            '#!/usr/bin/env python3\n'
+            'import os, pathlib, sys\n'
+            'args = sys.argv[1:]\n'
+            'kind = "mermaid" if "-i" in args else ("drawio" if "--export" in args else "plantuml")\n'
+            'if os.environ.get("FAIL_RENDERER") == kind: sys.exit(2)\n'
+            'if kind == "plantuml" and "-checkonly" in args: sys.exit(0)\n'
+            'if kind == "plantuml": target = pathlib.Path(args[args.index("-o") + 1]) / (pathlib.Path(args[-1]).stem + ".svg")\n'
+            'else: target = pathlib.Path(args[args.index("-o" if kind == "mermaid" else "--output") + 1])\n'
+            'target.write_text("<svg xmlns=\\"http://www.w3.org/2000/svg\\"><text>diagram</text></svg>")\n',
+            encoding="utf-8")
+        engine.chmod(0o755)
+        command = [sys.executable, str(Path(__file__).with_name("generate_architecture.py")),
+                   "render", "--source", str(self.root), "--ir", str(ir_path), "--output", str(output),
+                   "--mermaid-cli", str(engine), "--plantuml-cli", str(engine), "--drawio-cli", str(engine)]
+        success = subprocess.run(command, text=True, capture_output=True)
+        self.assertEqual(success.returncode, 0, success.stdout + success.stderr)
+        result = json.loads(success.stdout)
+        self.assertEqual(result["rendererChecks"], {"mermaid": "pass", "plantuml": "pass", "drawio": "pass"})
+        for name in ("mermaid", "plantuml", "drawio"):
+            self.assertEqual(ET.parse(output / f"architecture.{name}.svg").getroot().tag,
+                             "{http://www.w3.org/2000/svg}svg")
+        failed = subprocess.run(command, text=True, capture_output=True,
+                                env=dict(os.environ, FAIL_RENDERER="plantuml"))
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertEqual(json.loads(failed.stdout)["rendererChecks"]["plantuml"], "fail")
+        self.assertFalse((output / "architecture.plantuml.svg").exists())
+        self.assertTrue((output / "architecture.mermaid.svg").exists())
+
+    def test_renderer_gate_rejects_missing_cli_and_invalid_svg(self):
+        ir_path = self.root / "ir.json"
+        ir_path.write_text(json.dumps(self.ir), encoding="utf-8")
+        output = self.root / "output"
+        base = [sys.executable, str(Path(__file__).with_name("generate_architecture.py")),
+                "render", "--source", str(self.root), "--ir", str(ir_path), "--output", str(output)]
+        missing = subprocess.run([*base, "--mermaid-cli", str(self.root / "absent")],
+                                 text=True, capture_output=True)
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertEqual(json.loads(missing.stdout)["rendererChecks"]["mermaid"], "fail")
+        engine = self.root / "bad-engine"
+        engine.write_text('#!/bin/sh\nprintf "not svg" > "$4"\n', encoding="utf-8")
+        engine.chmod(0o755)
+        invalid = subprocess.run([*base, "--mermaid-cli", str(engine)], text=True, capture_output=True)
+        self.assertNotEqual(invalid.returncode, 0)
+        self.assertFalse((output / "architecture.mermaid.svg").exists())
+
+    @unittest.skipUnless(all(os.environ.get(name) for name in
+                             ("MERMAID_OFFICIAL_CLI", "PLANTUML_OFFICIAL_CLI", "DRAWIO_OFFICIAL_CLI")),
+                         "official Mermaid, PlantUML, and draw.io CLIs are not configured")
+    def test_official_diagram_engines_accept_generated_outputs(self):
+        (self.root / "tables.sql").write_text("CREATE TABLE orders\n", encoding="utf-8")
+        self.ir["domains"][0]["name"] = "A & B"
+        self.ir["domains"][0]["tables"] = [{
+            "name": "orders", "provenance": "EXTRACTED",
+            "evidence": [{"path": "tables.sql", "line": 1, "quote": "orders"}],
+        }]
+        billing = copy.deepcopy(self.ir["domains"][0])
+        billing.update(id="billing", name="Billing", tables=[])
+        self.ir["domains"].append(billing)
+        self.ir["relations"] = [{
+            "from": "orders", "to": "billing", "label": "charges", "provenance": "INFERRED",
+            "evidence": [{"path": "src/OrderController.java", "line": 3, "quote": "createOrder"}],
+        }]
+        self.assertEqual(validate_architecture(self.ir, self.root), [])
+        ir_path = self.root / "ir.json"
+        ir_path.write_text(json.dumps(self.ir), encoding="utf-8")
+        output = self.root / "output"
+        command = [sys.executable, str(Path(__file__).with_name("generate_architecture.py")),
+                   "render", "--source", str(self.root), "--ir", str(ir_path), "--output", str(output)]
+        for kind in ("mermaid", "plantuml", "drawio"):
+            command.extend([f"--{kind}-cli", os.environ[f"{kind.upper()}_OFFICIAL_CLI"]])
+        rendered = subprocess.run(command, text=True, capture_output=True, timeout=360)
+        self.assertEqual(rendered.returncode, 0, rendered.stdout + rendered.stderr)
+        self.assertEqual(json.loads(rendered.stdout)["rendererChecks"],
+                         {"mermaid": "pass", "plantuml": "pass", "drawio": "pass"})
+        for kind in ("mermaid", "plantuml", "drawio"):
+            svg = output / f"architecture.{kind}.svg"
+            self.assertGreater(svg.stat().st_size, 100)
+            self.assertEqual(ET.parse(svg).getroot().tag, "{http://www.w3.org/2000/svg}svg")
+
     @unittest.skipUnless(os.environ.get("ARCHIFY_OFFICIAL_CLI"), "official Archify CLI is not configured")
     def test_official_archify_validates_and_checks_adapter_output(self):
         (self.root / "tables.sql").write_text("CREATE TABLE orders\nCREATE TABLE order_items\n", encoding="utf-8")

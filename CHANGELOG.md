@@ -6,6 +6,8 @@
 
 - 新增独立的 `understand-arch` Skill 与 CLI：无数量截断的源码上下文、逐条源码行证据校验，以及 Mermaid、PlantUML、draw.io、Archify schema-v1 输出；安装与 API 文档 Skill 分离。
 - 架构 IR 与 API Document IR 独立，保留来源状态 `EXTRACTED`／`INFERRED`／`AMBIGUOUS`；校验失败时不写新图。
+- Archify 接入官方 v2.16.0 `deliver --quality showcase` 验收：生成 HTML 与校验回执，失败时返回非零并清理旧 HTML；修复跨格式节点 ID 冲突、表格布局冲突及畸形 IR 导致的渲染异常。
+- Mermaid、PlantUML、draw.io 接入官方 CLI 验收：分别导出 SVG，返回 `rendererChecks` 状态；显式要求的引擎缺失、导出失败或 SVG 无效时返回非零并清理旧成品。CI 固定三套工具版本，使用真实引擎验证生成结果。
 
 ## [0.2.0] - 2026-09-27
 

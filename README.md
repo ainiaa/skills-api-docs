@@ -21,7 +21,20 @@ python3 scripts/generate_architecture.py validate --source /path/to/repo --ir /t
 python3 scripts/generate_architecture.py render --source /path/to/repo --ir /tmp/architecture-ir.json --output /tmp/architecture
 ```
 
-`context` 不设模块、类或文件数量上限，列出所有源码文件及扫描到的声明、路由、配置键和表名线索；声明扫描复用现有 tree-sitter 解析能力（未安装可选语法包时退回逐行候选扫描）。已有 `.ua/knowledge-graph.json` 与 `domain-graph.json` 时也会提供给 agent，并报告提交版本不一致。源码行校验能拦截不存在的引用；新鲜图谱或现有 CodeGraph 索引还会核对关键类的位置。业务能力和关系仍是带证据的推断，需审阅 `INFERRED`／`AMBIGUOUS` 项。`render` 输出 Mermaid、PlantUML、draw.io、验证过的 IR 和 Archify schema-v1 JSON；系统已安装官方 `archify` CLI 时还会生成 HTML。Archify 交付失败时命令返回非零，并清理旧 HTML，避免与新 IR 混用。新 Skill 的详细契约见[架构 IR](skills/understand-arch/references/architecture-ir.md)。
+`context` 不设模块、类或文件数量上限，列出所有源码文件及扫描到的声明、路由、配置键和表名线索；声明扫描复用现有 tree-sitter 解析能力（未安装可选语法包时退回逐行候选扫描）。已有 `.ua/knowledge-graph.json` 与 `domain-graph.json` 时也会提供给 agent，并报告提交版本不一致。源码行校验能拦截不存在的引用；新鲜图谱或现有 CodeGraph 索引还会核对关键类的位置。业务能力和关系仍是带证据的推断，需审阅 `INFERRED`／`AMBIGUOUS` 项。`render` 输出 Mermaid、PlantUML、draw.io、验证过的 IR 和 Archify schema-v1 JSON；找到对应官方 CLI 时，还会导出三种 SVG，并在 `rendererChecks` 中记录 `pass`、`fail` 或 `skipped`。系统已安装官方 `archify` CLI 时还会生成 HTML。任一官方渲染失败时命令返回非零，并清理对应旧成品，避免与新 IR 混用。新 Skill 的详细契约见[架构 IR](skills/understand-arch/references/architecture-ir.md)。
+
+### Mermaid、PlantUML、draw.io 官方验收
+
+要强制三种格式都经过对应引擎验收，传入官方 CLI 路径：
+
+```bash
+python3 scripts/generate_architecture.py render \
+  --source /path/to/repo --ir /tmp/architecture-ir.json --output /tmp/architecture \
+  --mermaid-cli /path/to/mmdc --plantuml-cli /path/to/plantuml \
+  --drawio-cli /path/to/drawio
+```
+
+Mermaid CLI 导出 `.mmd`，PlantUML 先做 `-checkonly` 再导出 `.puml`，draw.io Desktop CLI 导出 `.drawio`；三个成品都是 SVG。缺少显式指定的 CLI、导出失败或 SVG 无效都会返回非零。CI 固定 Mermaid CLI `12.0.0`、PlantUML `1.2026.8`、draw.io Desktop `29.3.6` 并执行真实引擎验收。引擎验收证明文件可渲染，业务解释仍需按 IR 证据审阅。
 
 ### Archify 官方验收
 
