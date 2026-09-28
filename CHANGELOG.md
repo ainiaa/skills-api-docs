@@ -4,10 +4,17 @@
 
 ## [Unreleased]
 
+- `understand-arch` 新增 draw.io `architecture-landscape` 总览视图：默认把源码支持的入口、模块边界、业务服务、数据设施和外部依赖分层；节点角色使用不同形状与色彩，主／辅助／依赖链路以颜色和线型区分，并以编号关系索引保持长标签可读。单图超出 12 个节点或 12 条关系、标签超长时拒绝交付，要求拆成概览与聚焦视图；以 FA 模块无参考图案例完成真实导出与审图。
+- `understand-arch` 增加面向 Mermaid、PlantUML、draw.io 和 Archify 官方原生语法的源码绘图流程：先选图型、核对代码、编写可编辑原生文件，再交给对应官方引擎验收与按需导出。新增逐条关联图中文字、来源状态和当前源码行的证据清单；无效引用在写入成品前拒绝，回执区分锚点验证与尚未证明的业务解释。
+- 对照四个引擎的官方图型目录新增[能力审计](docs/RENDERER_CAPABILITY_AUDIT.md)；增加 `render_native_diagram.py`，可直接用官方 CLI 验证并导出 Mermaid、PlantUML、draw.io 原生文件及 Archify 五种 typed JSON 模式。回执明确区分官方验收与未检查的源码证据，CI 增加各引擎原生图测试。
+- draw.io 新增 IR v2 UML 时序图适配：可编辑生命线、按序调用、异步与返回消息，以及自调用；通过官方 draw.io 导出和 FA 真实代码时序图的图片审查。修正了此前“draw.io 不支持时序图”的错误表述；激活条和组合片段仍未实现。
+- `understand-arch` 新增可核对的绘图规范、分型 IR v2 与默认简短请求流程：按 C4、UML 时序、BPMN 可视子集、Crow's Foot ERD 的语义分别校验；不支持的图型/引擎组合明确拒绝，旧 IR v1 保持兼容。
+- 已有 CodeGraph 索引且状态新鲜时，`context` 读取结构化类、路由和通过 `--focus` 指定的调用关系；导出回执区分官方引擎检查与仍需人工完成的视觉审查。C4 draw.io 改用分层布局、中文图例及定向连线；此前 FA 图片虽成功导出，但视觉质量未达用户要求，现由总览密度门槛和实际审图补上验收。
 - 新增独立的 `understand-arch` Skill 与 CLI：无数量截断的源码上下文、逐条源码行证据校验，以及 Mermaid、PlantUML、draw.io、Archify schema-v1 输出；安装与 API 文档 Skill 分离。
 - 架构 IR 与 API Document IR 独立，保留来源状态 `EXTRACTED`／`INFERRED`／`AMBIGUOUS`；校验失败时不写新图。
 - Archify 接入官方 v2.16.0 `deliver --quality showcase` 验收：生成 HTML 与校验回执，失败时返回非零并清理旧 HTML；修复跨格式节点 ID 冲突、表格布局冲突及畸形 IR 导致的渲染异常。
-- Mermaid、PlantUML、draw.io 接入官方 CLI 验收：分别导出 SVG，返回 `rendererChecks` 状态；显式要求的引擎缺失、导出失败或 SVG 无效时返回非零并清理旧成品。CI 固定三套工具版本，使用真实引擎验证生成结果。
+- Mermaid、PlantUML、draw.io 接入官方 CLI 验收：`render --format` 按需交付选中的原生格式，只有显式指定 `--svg-for <格式>` 才交付该格式的 SVG；返回 `rendererChecks` 状态，显式要求的引擎缺失或验收失败时返回非零并清理旧成品。CI 固定三套工具版本，使用真实引擎验证生成结果。
+- 架构图按 `--export-for 引擎:格式` 显式导出：Mermaid、PlantUML 为 SVG/PNG/PDF，draw.io 为 SVG/PNG/JPG/PDF，Archify 通过官方 HTML 查看器导出 SVG/PNG/JPG/WebP/WebM 并通过浏览器打印生成 PDF；验收成品并清理失败或过期的导出。`--svg-for` 保持兼容。
 
 ## [0.2.0] - 2026-09-27
 

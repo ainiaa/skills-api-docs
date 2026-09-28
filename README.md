@@ -13,28 +13,49 @@ bash install-arch.sh
 bash install-arch.sh --doctor
 ```
 
-可在 Codex 中请求“用 `$understand-arch` 分析这个仓库的业务域并生成架构图”。Skill 会让 agent 结合代码上下文生成带源码行证据的 IR，再调用确定性校验和渲染脚本。无模型的 CLI 也可独立使用：
+可在 Codex 中直接请求“根据代码生成架构图”，或显式使用 `$understand-arch`。笼统的项目／模块架构图默认生成有源码证据的 draw.io 架构总览，显示入口、模块边界、业务服务、数据设施和外部依赖；明确要求 C4 时使用 C4 图型。Skill 也可选择 UML 时序、BPMN 业务流程或 ERD；参考图和长提示词不是前提。UML 时序图可由 PlantUML、Mermaid 或 draw.io 输出，默认选择 PlantUML。CodeGraph 索引存在且新鲜时，`context` 会读取结构化类、路由及通过 `--focus <方法>` 指定的直接调用，作为源码取证线索。新图使用[分型 IR v2](skills/understand-arch/references/diagram-view-ir.md)，旧[架构 IR v1](skills/understand-arch/references/architecture-ir.md)继续兼容。完整的图型选择、能力边界和验收要求见[绘图规范](docs/DIAGRAM_STANDARD.md)。无模型的 CLI 也可独立使用：
 
 ```bash
 python3 scripts/generate_architecture.py context --source /path/to/repo --output /tmp/arch-context.json
 python3 scripts/generate_architecture.py validate --source /path/to/repo --ir /tmp/architecture-ir.json
-python3 scripts/generate_architecture.py render --source /path/to/repo --ir /tmp/architecture-ir.json --output /tmp/architecture
+python3 scripts/generate_architecture.py render --source /path/to/repo --ir /tmp/architecture-ir.json --output /tmp/architecture --format drawio --export-for drawio:png
 ```
 
-`context` 不设模块、类或文件数量上限，列出所有源码文件及扫描到的声明、路由、配置键和表名线索；声明扫描复用现有 tree-sitter 解析能力（未安装可选语法包时退回逐行候选扫描）。已有 `.ua/knowledge-graph.json` 与 `domain-graph.json` 时也会提供给 agent，并报告提交版本不一致。源码行校验能拦截不存在的引用；新鲜图谱或现有 CodeGraph 索引还会核对关键类的位置。业务能力和关系仍是带证据的推断，需审阅 `INFERRED`／`AMBIGUOUS` 项。`render` 输出 Mermaid、PlantUML、draw.io、验证过的 IR 和 Archify schema-v1 JSON；找到对应官方 CLI 时，还会导出三种 SVG，并在 `rendererChecks` 中记录 `pass`、`fail` 或 `skipped`。系统已安装官方 `archify` CLI 时还会生成 HTML。任一官方渲染失败时命令返回非零，并清理对应旧成品，避免与新 IR 混用。新 Skill 的详细契约见[架构 IR](skills/understand-arch/references/architecture-ir.md)。
+官方引擎支持的图型多于分型 IR v2。对未覆盖的图型，Skill 可根据需求和代码证据编写官方原生 `.mmd`、`.puml`、`.drawio` 或 Archify typed `.json`，再用统一命令交给相应官方 CLI 验证并按需导出。已有原生文件也可直接走此通道。例如：
+
+```bash
+python3 scripts/render_native_diagram.py --engine mermaid --input /tmp/classes.mmd --output /tmp/classes --export png
+python3 scripts/render_native_diagram.py --engine archify --input /tmp/process.workflow.json --output /tmp/process --export png
+python3 scripts/render_native_diagram.py --engine mermaid --input /tmp/classes.mmd --output /tmp/classes \
+  --source-repo /path/to/repo --evidence /tmp/diagram.evidence.json --export png
+```
+
+Archify 原生通道接受官方 `architecture`、`workflow`、`sequence`、`dataflow`、`lifecycle` 五种模式。源码驱动的原生图须附[证据清单](skills/understand-arch/references/native-diagrams.md)：逐条关联图中文字与当前源码行；回执会报告 `sourceEvidence: anchors_validated` 和 `claimSemantics: not_proven`。没有清单则报告 `sourceEvidence: not_checked`。`officialCheck: pass` 只表示原生文件经官方引擎验收，图的业务解释和视觉质量仍要审阅。各引擎官方目录与当前自动生成缺口见[能力审计](docs/RENDERER_CAPABILITY_AUDIT.md)。
+
+`context` 不设模块、类或文件数量上限，列出所有源码文件及扫描到的声明、路由、配置键和表名线索；声明扫描复用现有 tree-sitter 解析能力（未安装可选语法包时退回逐行候选扫描）。已有 `.ua/knowledge-graph.json` 与 `domain-graph.json` 时也会提供给 agent，并报告提交版本不一致。源码行校验能拦截不存在的引用；新鲜图谱或现有 CodeGraph 索引还会核对关键类的位置。业务能力和关系仍是带证据的推断，需审阅 `INFERRED`／`AMBIGUOUS` 项。`render` 用可重复的 `--format` 选择引擎，默认只交付原生文件与已验证 IR；`--export-for 引擎:格式` 按需求追加实际渲染的文件。选中 Archify 且 CLI 可用时会交付 HTML。`rendererChecks` 记录所选 Mermaid、PlantUML、draw.io 引擎的语法与导出验收状态，不能替代实际图片审查；新 IR v2 的回执标记 `visualReview: required`。Archify 使用 `archifyRendered` 和 `archifyReceipt`。任一请求的导出失败时命令返回非零，并清理对应旧成品。
 
 ### Mermaid、PlantUML、draw.io 官方验收
 
-要强制三种格式都经过对应引擎验收，传入官方 CLI 路径：
+按需要选择一种或多种格式；要强制所选格式经过对应引擎验收，传入官方 CLI 路径：
 
 ```bash
 python3 scripts/generate_architecture.py render \
   --source /path/to/repo --ir /tmp/architecture-ir.json --output /tmp/architecture \
+  --format mermaid --format plantuml --format drawio \
   --mermaid-cli /path/to/mmdc --plantuml-cli /path/to/plantuml \
   --drawio-cli /path/to/drawio
 ```
 
-Mermaid CLI 导出 `.mmd`，PlantUML 先做 `-checkonly` 再导出 `.puml`，draw.io Desktop CLI 导出 `.drawio`；三个成品都是 SVG。缺少显式指定的 CLI、导出失败或 SVG 无效都会返回非零。CI 固定 Mermaid CLI `12.0.0`、PlantUML `1.2026.8`、draw.io Desktop `29.3.6` 并执行真实引擎验收。引擎验收证明文件可渲染，业务解释仍需按 IR 证据审阅。
+默认交付物分别是 `.mmd`、`.puml`、`.drawio`。Mermaid 和 draw.io 会在临时目录渲染以验证文件，PlantUML 使用 `-checkonly`；临时文件不会交付。需要静态文件时追加并重复 `--export-for`，例如 `--export-for mermaid:png --export-for drawio:jpg --export-for plantuml:pdf`。旧参数 `--svg-for mermaid` 仍可用，等价于 `--export-for mermaid:svg`。请求导出时必须能运行对应官方 CLI；产物经过格式签名检查后才列入 `artifacts`，失败时返回非零并清理旧文件。CI 固定 Mermaid CLI `12.0.0`、PlantUML `1.2026.8`、draw.io Desktop `29.3.6` 并执行真实引擎验收。引擎验收证明文件可渲染，业务解释仍需按 IR 证据审阅。
+
+| 引擎 | 原生交付 | 可请求的静态导出 |
+|---|---|---|
+| Mermaid | `.mmd` | SVG、PNG、PDF |
+| PlantUML | `.puml` | SVG、PNG、PDF |
+| draw.io | `.drawio` | SVG、PNG、JPG、PDF |
+| Archify | `.archify.json`、HTML | SVG、PNG、JPG、WebP、WebM、PDF |
+
+Archify 官方 CLI 先交付并验收 HTML；请求图片或 WebM 时，本脚本用 Chrome/Chromium 调用该 HTML 查看器的官方导出菜单，PDF 调用同一浏览器的打印功能。请求 WebM 会为该次 Archify 规格启用 `trace` 动画。需有 Node.js 和 Chrome/Chromium；浏览器不支持 WebM 录制时会明确失败。成功文件会列入 `artifacts`。不支持的引擎与格式组合会在写文件前拒绝。
 
 ### Archify 官方验收
 
@@ -43,10 +64,11 @@ Mermaid CLI 导出 `.mmd`，PlantUML 先做 `-checkonly` 再导出 `.puml`，dra
 ```bash
 python3 scripts/generate_architecture.py render \
   --source /path/to/repo --ir /tmp/architecture-ir.json --output /tmp/architecture \
+  --format archify \
   --archify-cli /path/to/archify/archify/bin/archify.mjs
 ```
 
-此模式要求 CLI 可用，并调用官方 `deliver --quality showcase --json`。成功结果中的 `archifyReceipt` 包含官方校验和成品检查回执；失败返回非零状态。CI 的 [Archify 验收工作流](.github/workflows/archify-acceptance.yml)固定官方 [v2.16.0](https://github.com/tt-a1i/archify/releases/tag/v2.16.0) 对应提交 `c826e6c3a7abad19c0f3cd1ca57207d54b1ad8de`，用真实 CLI 测试含多个业务域、两张表、外部系统和关系的适配器输出。官方 `deliver` 包含验证、渲染及最终成品检查；它不证明业务域解释正确，`INFERRED`／`AMBIGUOUS` 仍需人工审阅。
+此模式要求 CLI 可用，并调用官方 `deliver --quality showcase --json`。成功结果中的 `archifyReceipt` 包含官方校验和成品检查回执；失败返回非零状态。附加 `--export-for archify:png --export-for archify:pdf` 等参数即可交付查看器导出的静态文件。CI 的 [Archify 验收工作流](.github/workflows/archify-acceptance.yml)固定官方 [v2.16.0](https://github.com/tt-a1i/archify/releases/tag/v2.16.0) 对应提交 `c826e6c3a7abad19c0f3cd1ca57207d54b1ad8de`，用真实 CLI 测试含多个业务域、两张表、外部系统和关系的适配器输出。官方 `deliver` 包含验证、渲染及最终成品检查；它不证明业务域解释正确，`INFERRED`／`AMBIGUOUS` 仍需人工审阅。
 
 ## 3 步快速开始
 

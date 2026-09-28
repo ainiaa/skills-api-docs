@@ -2,6 +2,7 @@ import json
 import copy
 import os
 import re
+import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -264,7 +265,8 @@ class ArchitectureTests(unittest.TestCase):
         output = self.root / "output"
         ir_path.write_text(json.dumps(self.ir), encoding="utf-8")
         cli = Path(__file__).with_name("generate_architecture.py")
-        command = [sys.executable, str(cli), "render", "--source", str(self.root), "--ir", str(ir_path), "--output", str(output)]
+        command = [sys.executable, str(cli), "render", "--source", str(self.root), "--ir", str(ir_path),
+                   "--output", str(output), "--format", "archify"]
         valid = subprocess.run(command, text=True, capture_output=True)
         self.assertEqual(valid.returncode, 0, valid.stdout + valid.stderr)
         self.assertTrue((output / "architecture.archify.json").is_file())
@@ -274,6 +276,52 @@ class ArchitectureTests(unittest.TestCase):
         invalid = subprocess.run(command, text=True, capture_output=True)
         self.assertNotEqual(invalid.returncode, 0)
         self.assertEqual((output / "architecture.ir.json").read_text(encoding="utf-8"), before)
+
+    def test_render_delivers_only_requested_native_format_and_svg_is_opt_in(self):
+        ir_path = self.root / "ir.json"
+        ir_path.write_text(json.dumps(self.ir), encoding="utf-8")
+        output = self.root / "output"
+        engine = self.root / "engine"
+        engine.write_text(
+            '#!/usr/bin/env python3\n'
+            'import pathlib, sys\n'
+            'args = sys.argv[1:]\n'
+            'target = pathlib.Path(args[args.index("-o" if "-i" in args else "--output") + 1])\n'
+            'target.write_text("<svg xmlns=\\"http://www.w3.org/2000/svg\\"><text>diagram</text></svg>")\n',
+            encoding="utf-8")
+        engine.chmod(0o755)
+        base = [sys.executable, str(Path(__file__).with_name("generate_architecture.py")),
+                "render", "--source", str(self.root), "--ir", str(ir_path), "--output", str(output)]
+        missing_format = subprocess.run(base, text=True, capture_output=True)
+        self.assertNotEqual(missing_format.returncode, 0)
+        missing_svg_engine = subprocess.run([*base, "--format", "mermaid", "--svg-for", "mermaid"],
+                                            text=True, capture_output=True,
+                                            env=dict(os.environ, PATH="/usr/bin:/bin"))
+        self.assertNotEqual(missing_svg_engine.returncode, 0)
+        mermaid = subprocess.run([*base, "--format", "mermaid", "--mermaid-cli", str(engine)],
+                                 text=True, capture_output=True)
+        self.assertEqual(mermaid.returncode, 0, mermaid.stdout + mermaid.stderr)
+        self.assertEqual(json.loads(mermaid.stdout)["rendererChecks"], {"mermaid": "pass"})
+        self.assertEqual({path.name for path in output.iterdir()},
+                         {"architecture.ir.json", "architecture.mmd"})
+        drawio = subprocess.run([*base, "--format", "drawio", "--drawio-cli", str(engine)],
+                                text=True, capture_output=True)
+        self.assertEqual(drawio.returncode, 0, drawio.stdout + drawio.stderr)
+        self.assertEqual({path.name for path in output.iterdir()},
+                         {"architecture.ir.json", "architecture.drawio"})
+        svg = subprocess.run([*base, "--format", "mermaid", "--svg-for", "mermaid",
+                              "--mermaid-cli", str(engine)],
+                             text=True, capture_output=True)
+        self.assertEqual(svg.returncode, 0, svg.stdout + svg.stderr)
+        self.assertEqual({path.name for path in output.iterdir()},
+                         {"architecture.ir.json", "architecture.mmd", "architecture.mermaid.svg"})
+        mixed = subprocess.run([*base, "--format", "mermaid", "--format", "drawio",
+                                "--svg-for", "mermaid", "--mermaid-cli", str(engine),
+                                "--drawio-cli", str(engine)], text=True, capture_output=True)
+        self.assertEqual(mixed.returncode, 0, mixed.stdout + mixed.stderr)
+        self.assertEqual({path.name for path in output.iterdir()},
+                         {"architecture.ir.json", "architecture.mmd", "architecture.drawio",
+                          "architecture.mermaid.svg"})
 
     def test_archify_failure_does_not_leave_stale_html(self):
         ir_path = self.root / "ir.json"
@@ -290,7 +338,8 @@ class ArchitectureTests(unittest.TestCase):
             encoding="utf-8")
         archify.chmod(0o755)
         command = [sys.executable, str(Path(__file__).with_name("generate_architecture.py")),
-                   "render", "--source", str(self.root), "--ir", str(ir_path), "--output", str(output)]
+                   "render", "--source", str(self.root), "--ir", str(ir_path), "--output", str(output),
+                   "--format", "archify"]
         environment = dict(os.environ, PATH=str(self.root) + os.pathsep + os.environ["PATH"])
         first = subprocess.run(command, text=True, capture_output=True, env=environment)
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
@@ -328,6 +377,8 @@ class ArchitectureTests(unittest.TestCase):
         engine.chmod(0o755)
         command = [sys.executable, str(Path(__file__).with_name("generate_architecture.py")),
                    "render", "--source", str(self.root), "--ir", str(ir_path), "--output", str(output),
+                   "--format", "mermaid", "--format", "plantuml", "--format", "drawio",
+                   "--svg-for", "mermaid", "--svg-for", "plantuml", "--svg-for", "drawio",
                    "--mermaid-cli", str(engine), "--plantuml-cli", str(engine), "--drawio-cli", str(engine)]
         success = subprocess.run(command, text=True, capture_output=True)
         self.assertEqual(success.returncode, 0, success.stdout + success.stderr)
@@ -348,7 +399,8 @@ class ArchitectureTests(unittest.TestCase):
         ir_path.write_text(json.dumps(self.ir), encoding="utf-8")
         output = self.root / "output"
         base = [sys.executable, str(Path(__file__).with_name("generate_architecture.py")),
-                "render", "--source", str(self.root), "--ir", str(ir_path), "--output", str(output)]
+                "render", "--source", str(self.root), "--ir", str(ir_path), "--output", str(output),
+                "--format", "mermaid", "--svg-for", "mermaid"]
         missing = subprocess.run([*base, "--mermaid-cli", str(self.root / "absent")],
                                  text=True, capture_output=True)
         self.assertNotEqual(missing.returncode, 0)
@@ -359,6 +411,90 @@ class ArchitectureTests(unittest.TestCase):
         invalid = subprocess.run([*base, "--mermaid-cli", str(engine)], text=True, capture_output=True)
         self.assertNotEqual(invalid.returncode, 0)
         self.assertFalse((output / "architecture.mermaid.svg").exists())
+
+    def test_requested_raster_and_pdf_exports_are_checked_and_cleaned(self):
+        ir_path = self.root / "ir.json"
+        ir_path.write_text(json.dumps(self.ir), encoding="utf-8")
+        output = self.root / "output"
+        engine = self.root / "format-engine"
+        engine.write_text(
+            '#!/usr/bin/env python3\n'
+            'import os, pathlib, sys\n'
+            'args = sys.argv[1:]\n'
+            'if "-checkonly" in args: sys.exit(0)\n'
+            'kind = "mermaid" if "-i" in args else ("drawio" if "--export" in args else "plantuml")\n'
+            'if kind == "plantuml":\n'
+            '    fmt = args[args.index("--format") + 1]\n'
+            '    target = pathlib.Path(args[args.index("--output-dir") + 1]) / (pathlib.Path(args[-1]).stem + "." + fmt)\n'
+            'else:\n'
+            '    target = pathlib.Path(args[args.index("-o" if kind == "mermaid" else "--output") + 1])\n'
+            '    fmt = target.suffix[1:]\n'
+            'if os.environ.get("FAIL_FORMAT") == kind + ":" + fmt: sys.exit(3)\n'
+            'if os.environ.get("BAD_FORMAT") == kind + ":" + fmt: target.write_bytes(b"bad"); sys.exit(0)\n'
+            'data = {"svg": b"<svg xmlns=\\"http://www.w3.org/2000/svg\\"><text>diagram</text></svg>",\n'
+            '        "png": b"\\x89PNG\\r\\n\\x1a\\n" + b"\\0\\0\\0\\rIHDR" + b"\\0\\0\\0\\x01\\0\\0\\0\\x01",\n'
+            '        "jpg": b"\\xff\\xd8\\xff\\xe0" + b"fake" + b"\\xff\\xd9",\n'
+            '        "pdf": b"%PDF-1.4\\n" + b"fake" + b"\\n%%EOF"}\n'
+            'target.write_bytes(data[fmt])\n', encoding="utf-8")
+        engine.chmod(0o755)
+        base = [sys.executable, str(Path(__file__).with_name("generate_architecture.py")),
+                "render", "--source", str(self.root), "--ir", str(ir_path), "--output", str(output)]
+        requested = [*base, "--format", "mermaid", "--format", "plantuml", "--format", "drawio",
+                     "--export-for", "mermaid:png", "--export-for", "mermaid:pdf",
+                     "--export-for", "plantuml:png", "--export-for", "plantuml:pdf",
+                     "--export-for", "drawio:png", "--export-for", "drawio:jpg",
+                     "--export-for", "drawio:pdf", "--export-for", "drawio:svg",
+                     "--mermaid-cli", str(engine), "--plantuml-cli", str(engine),
+                     "--drawio-cli", str(engine)]
+        rendered = subprocess.run(requested, text=True, capture_output=True)
+        self.assertEqual(rendered.returncode, 0, rendered.stdout + rendered.stderr)
+        result = json.loads(rendered.stdout)
+        self.assertEqual(result["rendererChecks"],
+                         {"mermaid": "pass", "plantuml": "pass", "drawio": "pass"})
+        for kind, fmt in (("mermaid", "png"), ("mermaid", "pdf"),
+                          ("plantuml", "png"), ("plantuml", "pdf"),
+                          ("drawio", "png"), ("drawio", "jpg"), ("drawio", "pdf"),
+                          ("drawio", "svg")):
+            target = output / f"architecture.{kind}.{fmt}"
+            self.assertTrue(target.is_file(), target)
+            self.assertIn(str(target.resolve()), result["artifacts"])
+        failed = subprocess.run(requested, text=True, capture_output=True,
+                                env=dict(os.environ, FAIL_FORMAT="drawio:jpg"))
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertFalse((output / "architecture.drawio.jpg").exists())
+        self.assertNotIn(str((output / "architecture.drawio.jpg").resolve()),
+                         json.loads(failed.stdout)["artifacts"])
+        invalid = subprocess.run(requested, text=True, capture_output=True,
+                                 env=dict(os.environ, BAD_FORMAT="mermaid:pdf"))
+        self.assertNotEqual(invalid.returncode, 0)
+        self.assertFalse((output / "architecture.mermaid.pdf").exists())
+        self.assertEqual(json.loads(invalid.stdout)["rendererChecks"]["mermaid"], "fail")
+        unavailable = subprocess.run([*base, "--format", "mermaid", "--export-for", "mermaid:png",
+                                      "--mermaid-cli", str(self.root / "missing")], text=True, capture_output=True)
+        self.assertNotEqual(unavailable.returncode, 0)
+        self.assertFalse((output / "architecture.mermaid.png").exists())
+        shrunk = subprocess.run([*base, "--format", "mermaid", "--mermaid-cli", str(engine)],
+                                text=True, capture_output=True)
+        self.assertEqual(shrunk.returncode, 0, shrunk.stdout + shrunk.stderr)
+        self.assertEqual({path.name for path in output.iterdir()},
+                         {"architecture.ir.json", "architecture.mmd"})
+
+    def test_export_requests_reject_unsupported_or_unselected_pairs(self):
+        ir_path = self.root / "ir.json"
+        ir_path.write_text(json.dumps(self.ir), encoding="utf-8")
+        base = [sys.executable, str(Path(__file__).with_name("generate_architecture.py")),
+                "render", "--source", str(self.root), "--ir", str(ir_path),
+                "--output", str(self.root / "output"), "--format", "mermaid"]
+        for export in ("mermaid:jpg", "plantuml:png", "mermaid:gif", "archify:gif", "bad", "mermaid:png:jpg"):
+            with self.subTest(export=export):
+                rejected = subprocess.run([*base, "--export-for", export], text=True, capture_output=True)
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertFalse((self.root / "output").exists())
+        missing_archify = subprocess.run([*base[:-2], "--format", "archify", "--export-for", "archify:png"],
+                                         text=True, capture_output=True,
+                                         env=dict(os.environ, PATH="/usr/bin:/bin"))
+        self.assertNotEqual(missing_archify.returncode, 0)
+        self.assertFalse((self.root / "output" / "architecture.archify.png").exists())
 
     @unittest.skipUnless(all(os.environ.get(name) for name in
                              ("MERMAID_OFFICIAL_CLI", "PLANTUML_OFFICIAL_CLI", "DRAWIO_OFFICIAL_CLI")),
@@ -377,6 +513,12 @@ class ArchitectureTests(unittest.TestCase):
             "from": "orders", "to": "billing", "label": "charges", "provenance": "INFERRED",
             "evidence": [{"path": "src/OrderController.java", "line": 3, "quote": "createOrder"}],
         }]
+        (self.root / "src" / "EbsClient.java").write_text("interface EbsClient {}\n", encoding="utf-8")
+        self.ir["externalSystems"] = [{
+            "name": "ERP", "kind": "REST", "via": ["EbsClient"], "domain": "orders",
+            "provenance": "INFERRED",
+            "evidence": [{"path": "src/EbsClient.java", "line": 1, "quote": "EbsClient"}],
+        }]
         self.assertEqual(validate_architecture(self.ir, self.root), [])
         ir_path = self.root / "ir.json"
         ir_path.write_text(json.dumps(self.ir), encoding="utf-8")
@@ -384,7 +526,10 @@ class ArchitectureTests(unittest.TestCase):
         command = [sys.executable, str(Path(__file__).with_name("generate_architecture.py")),
                    "render", "--source", str(self.root), "--ir", str(ir_path), "--output", str(output)]
         for kind in ("mermaid", "plantuml", "drawio"):
-            command.extend([f"--{kind}-cli", os.environ[f"{kind.upper()}_OFFICIAL_CLI"]])
+            command.extend(["--format", kind, "--svg-for", kind,
+                            f"--{kind}-cli", os.environ[f"{kind.upper()}_OFFICIAL_CLI"]])
+            for fmt in (("png", "pdf") if kind != "drawio" else ("png", "jpg", "pdf")):
+                command.extend(["--export-for", f"{kind}:{fmt}"])
         rendered = subprocess.run(command, text=True, capture_output=True, timeout=360)
         self.assertEqual(rendered.returncode, 0, rendered.stdout + rendered.stderr)
         self.assertEqual(json.loads(rendered.stdout)["rendererChecks"],
@@ -393,6 +538,21 @@ class ArchitectureTests(unittest.TestCase):
             svg = output / f"architecture.{kind}.svg"
             self.assertGreater(svg.stat().st_size, 100)
             self.assertEqual(ET.parse(svg).getroot().tag, "{http://www.w3.org/2000/svg}svg")
+            for fmt in (("png", "pdf") if kind != "drawio" else ("png", "jpg", "pdf")):
+                artifact = output / f"architecture.{kind}.{fmt}"
+                data = artifact.read_bytes()
+                self.assertGreater(len(data), 100)
+                self.assertTrue(data.startswith({"png": b"\x89PNG\r\n\x1a\n", "jpg": b"\xff\xd8\xff",
+                                                "pdf": b"%PDF-"}[fmt]), artifact)
+        pdf_only = subprocess.run([sys.executable, str(Path(__file__).with_name("generate_architecture.py")),
+                                   "render", "--source", str(self.root), "--ir", str(ir_path),
+                                   "--output", str(output), "--format", "plantuml",
+                                   "--export-for", "plantuml:pdf", "--plantuml-cli",
+                                   os.environ["PLANTUML_OFFICIAL_CLI"]],
+                                  text=True, capture_output=True, timeout=120)
+        self.assertEqual(pdf_only.returncode, 0, pdf_only.stdout + pdf_only.stderr)
+        self.assertEqual({path.name for path in output.iterdir()},
+                         {"architecture.ir.json", "architecture.puml", "architecture.plantuml.pdf"})
 
     @unittest.skipUnless(os.environ.get("ARCHIFY_OFFICIAL_CLI"), "official Archify CLI is not configured")
     def test_official_archify_validates_and_checks_adapter_output(self):
@@ -424,7 +584,7 @@ class ArchitectureTests(unittest.TestCase):
         archify = os.environ["ARCHIFY_OFFICIAL_CLI"]
         command = [sys.executable, str(Path(__file__).with_name("generate_architecture.py")),
                    "render", "--source", str(self.root), "--ir", str(ir_path), "--output", str(output),
-                   "--archify-cli", archify]
+                   "--format", "archify", "--archify-cli", archify]
         rendered = subprocess.run(command, text=True, capture_output=True)
         self.assertEqual(rendered.returncode, 0, rendered.stdout + rendered.stderr)
         result = json.loads(rendered.stdout)
@@ -438,6 +598,41 @@ class ArchitectureTests(unittest.TestCase):
             checked = subprocess.run([archify, *args], text=True, capture_output=True)
             self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
             self.assertTrue(json.loads(checked.stdout)["ok"])
+        chrome = (os.environ.get("ARCHIFY_CHROME") or
+                  ("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" if sys.platform == "darwin" else
+                   shutil.which("google-chrome") or shutil.which("chromium")))
+        if chrome and Path(chrome).is_file():
+            requested = [*command]
+            for fmt in ("svg", "png", "jpg", "webp", "pdf", "webm"):
+                requested.extend(["--export-for", f"archify:{fmt}"])
+            exported = subprocess.run(requested, text=True, capture_output=True, timeout=180)
+            self.assertEqual(exported.returncode, 0, exported.stdout + exported.stderr)
+            receipt = json.loads(exported.stdout)
+            self.assertEqual(json.loads(specification.read_text(encoding="utf-8"))["meta"]["animation"], "trace")
+            for fmt, signature in (("png", b"\x89PNG\r\n\x1a\n"), ("jpg", b"\xff\xd8\xff"),
+                                   ("webp", b"RIFF"), ("pdf", b"%PDF-"),
+                                   ("webm", b"\x1a\x45\xdf\xa3")):
+                artifact = output / f"architecture.archify.{fmt}"
+                self.assertTrue(artifact.is_file(), artifact)
+                self.assertGreater(artifact.stat().st_size, 100)
+                self.assertTrue(artifact.read_bytes().startswith(signature), artifact)
+                self.assertIn(str(artifact.resolve()), receipt["artifacts"])
+            svg = output / "architecture.archify.svg"
+            self.assertEqual(ET.parse(svg).getroot().tag, "{http://www.w3.org/2000/svg}svg")
+            no_browser = subprocess.run(requested, text=True, capture_output=True, timeout=30,
+                                        env=dict(os.environ, ARCHIFY_CHROME=str(self.root / "absent-chrome")))
+            self.assertNotEqual(no_browser.returncode, 0)
+            self.assertIn("Chrome/Chromium", json.loads(no_browser.stdout)["problems"][0])
+            self.assertFalse((output / "architecture.archify.png").exists())
+            self.assertTrue(html.is_file())
+            native_only = subprocess.run(command, text=True, capture_output=True, timeout=30)
+            self.assertEqual(native_only.returncode, 0, native_only.stdout + native_only.stderr)
+            self.assertFalse((output / "architecture.archify.webp").exists())
+            pdf_only = subprocess.run([*command, "--export-for", "archify:pdf"],
+                                      text=True, capture_output=True, timeout=60)
+            self.assertEqual(pdf_only.returncode, 0, pdf_only.stdout + pdf_only.stderr)
+            self.assertTrue((output / "architecture.archify.pdf").read_bytes().startswith(b"%PDF-"))
+            self.assertNotIn("animation", json.loads(specification.read_text(encoding="utf-8"))["meta"])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,242 @@
+"""Acceptance tests for official native diagram sources outside typed IR v2."""
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+SCRIPT = Path(__file__).with_name("render_native_diagram.py")
+ARCHIFY_CLI = os.environ.get("ARCHIFY_OFFICIAL_CLI") or shutil.which("archify")
+ARCHIFY_EXAMPLES = Path(ARCHIFY_CLI).resolve().parent.parent / "examples" if ARCHIFY_CLI else None
+
+
+class NativeDiagramTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.output = self.root / "out"
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def render(self, engine, source, *extra):
+        return subprocess.run([sys.executable, str(SCRIPT), "--engine", engine,
+                               "--input", str(source), "--output", str(self.output), *extra],
+                              capture_output=True, text=True)
+
+    def source_backed(self, *, engine="mermaid", diagram_type="class", artifact_quote="class Asset",
+                      quote="class Asset", provenance="EXTRACTED", path="Asset.java", line=1):
+        source_root = self.root / "source"
+        source_root.mkdir(exist_ok=True)
+        (source_root / "Asset.java").write_text("class Asset {}\n", encoding="utf-8")
+        source = self.root / "classes.mmd"
+        source.write_text("classDiagram\n  class Asset\n", encoding="utf-8")
+        manifest = self.root / "evidence.json"
+        manifest.write_text(json.dumps({"version": 1, "engine": engine,
+                                        "diagramType": diagram_type,
+                                        "claims": [{"statement": "Asset exists",
+                                                    "artifactQuote": artifact_quote,
+                                                    "provenance": provenance,
+                                                    "evidence": [{"path": path, "line": line,
+                                                                  "quote": quote}]}]}), encoding="utf-8")
+        return source, source_root, manifest
+
+    def test_source_repo_requires_evidence_manifest(self):
+        source, source_root, _ = self.source_backed()
+        result = self.render("mermaid", source, "--source-repo", str(source_root))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--evidence", result.stdout + result.stderr)
+        self.assertFalse(self.output.exists())
+
+    def test_evidence_manifest_requires_source_repo(self):
+        source, _, manifest = self.source_backed()
+        result = self.render("mermaid", source, "--evidence", str(manifest))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--source-repo", result.stdout + result.stderr)
+        self.assertFalse(self.output.exists())
+
+    def test_rejects_source_claim_without_matching_code_quote(self):
+        source, source_root, manifest = self.source_backed(quote="class Missing")
+        result = self.render("mermaid", source, "--source-repo", str(source_root),
+                             "--evidence", str(manifest))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("quote does not occur", result.stdout + result.stderr)
+        self.assertFalse(self.output.exists())
+
+    def test_rejects_source_claim_without_matching_diagram_text(self):
+        source, source_root, manifest = self.source_backed(artifact_quote="class Missing")
+        result = self.render("mermaid", source, "--source-repo", str(source_root),
+                             "--evidence", str(manifest))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("artifactQuote", result.stdout + result.stderr)
+        self.assertFalse(self.output.exists())
+
+    def test_rejects_wrong_engine_or_provenance_in_evidence_manifest(self):
+        for options, expected in (({"engine": "plantuml"}, "engine"),
+                                  ({"provenance": "GUESSED"}, "provenance")):
+            with self.subTest(options=options):
+                source, source_root, manifest = self.source_backed(**options)
+                result = self.render("mermaid", source, "--source-repo", str(source_root),
+                                     "--evidence", str(manifest))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected, result.stdout + result.stderr)
+                self.assertFalse(self.output.exists())
+
+    def test_rejects_source_evidence_outside_repository(self):
+        source, source_root, manifest = self.source_backed(path="../outside.java")
+        (self.root / "outside.java").write_text("class Asset {}\n", encoding="utf-8")
+        result = self.render("mermaid", source, "--source-repo", str(source_root),
+                             "--evidence", str(manifest))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("outside source root", result.stdout + result.stderr)
+        self.assertFalse(self.output.exists())
+
+    def test_rejects_archify_manifest_type_mismatch_before_writing(self):
+        source, source_root, manifest = self.source_backed(engine="archify", diagram_type="sequence",
+                                                           artifact_quote='"diagram_type": "workflow"')
+        source = self.root / "workflow.json"
+        source.write_text('{"diagram_type": "workflow", "schema_version": 1}', encoding="utf-8")
+        result = self.render("archify", source, "--source-repo", str(source_root),
+                             "--evidence", str(manifest))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("diagramType must be workflow", result.stdout + result.stderr)
+        self.assertFalse(self.output.exists())
+
+    @unittest.skipUnless(os.environ.get("MERMAID_OFFICIAL_CLI") or shutil.which("mmdc"),
+                         "official Mermaid CLI unavailable")
+    def test_source_backed_native_diagram_checks_claim_anchors_and_exports(self):
+        source, source_root, manifest = self.source_backed()
+        executable = os.environ.get("MERMAID_OFFICIAL_CLI") or shutil.which("mmdc")
+        result = self.render("mermaid", source, "--source-repo", str(source_root),
+                             "--evidence", str(manifest), "--engine-cli", executable,
+                             "--export", "png")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        receipt = json.loads(result.stdout)
+        self.assertEqual(receipt["sourceEvidence"], "anchors_validated")
+        self.assertEqual(receipt["claimSemantics"], "not_proven")
+        self.assertEqual(receipt["claimCount"], 1)
+        self.assertEqual(receipt["declaredDiagramType"], "class")
+        self.assertIn(str((self.output / "diagram.evidence.json").resolve()), receipt["artifacts"])
+        self.assertTrue((self.output / "diagram.mermaid.png").is_file())
+
+    @unittest.skipUnless(os.environ.get("MERMAID_OFFICIAL_CLI") or shutil.which("mmdc"),
+                         "official Mermaid CLI unavailable")
+    def test_run_without_manifest_removes_stale_evidence_copy(self):
+        source, source_root, manifest = self.source_backed()
+        executable = os.environ.get("MERMAID_OFFICIAL_CLI") or shutil.which("mmdc")
+        first = self.render("mermaid", source, "--source-repo", str(source_root),
+                            "--evidence", str(manifest), "--engine-cli", executable)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertTrue((self.output / "diagram.evidence.json").is_file())
+        second = self.render("mermaid", source, "--engine-cli", executable)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertFalse((self.output / "diagram.evidence.json").exists())
+
+    def test_rejects_wrong_native_extension_before_writing(self):
+        source = self.root / "diagram.txt"
+        source.write_text("classDiagram\nA <|-- B\n", encoding="utf-8")
+        result = self.render("mermaid", source)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(".mmd", result.stdout + result.stderr)
+        self.assertFalse(self.output.exists())
+
+    def test_rejects_unknown_archify_type_before_writing(self):
+        source = self.root / "unknown.json"
+        source.write_text('{"diagram_type":"unknown","schema_version":1}', encoding="utf-8")
+        result = self.render("archify", source, "--engine-cli", str(self.root / "missing-archify"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unsupported Archify diagram_type", result.stdout + result.stderr)
+        self.assertFalse(self.output.exists())
+
+    def test_rejects_archify_quality_flag_for_other_engines(self):
+        source = self.root / "diagram.mmd"
+        source.write_text("flowchart LR\nA-->B\n", encoding="utf-8")
+        result = self.render("mermaid", source, "--quality", "showcase")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Archify", result.stdout + result.stderr)
+        self.assertFalse(self.output.exists())
+
+    @unittest.skipUnless(os.environ.get("MERMAID_OFFICIAL_CLI") or shutil.which("mmdc"),
+                         "official Mermaid CLI unavailable")
+    def test_official_mermaid_class_diagram_native_export(self):
+        source = self.root / "classes.mmd"
+        source.write_text("classDiagram\n  class Asset\n  class Event\n  Asset --> Event : creates\n",
+                          encoding="utf-8")
+        executable = os.environ.get("MERMAID_OFFICIAL_CLI") or shutil.which("mmdc")
+        result = self.render("mermaid", source, "--engine-cli", executable, "--export", "png")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        receipt = json.loads(result.stdout)
+        self.assertEqual(receipt["officialCheck"], "pass")
+        self.assertEqual(receipt["sourceEvidence"], "not_checked")
+        self.assertIn(str((self.output / "diagram.mermaid.png").resolve()), receipt["artifacts"])
+        self.assertTrue((self.output / "diagram.mmd").read_text().startswith("classDiagram"))
+
+    @unittest.skipUnless(os.environ.get("PLANTUML_OFFICIAL_CLI") or shutil.which("plantuml"),
+                         "official PlantUML CLI unavailable")
+    def test_official_plantuml_activity_diagram_native_validation(self):
+        source = self.root / "activity.puml"
+        source.write_text("@startuml\nstart\n:Receive request;\nstop\n@enduml\n", encoding="utf-8")
+        executable = os.environ.get("PLANTUML_OFFICIAL_CLI") or shutil.which("plantuml")
+        result = self.render("plantuml", source, "--engine-cli", executable)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["officialCheck"], "pass")
+        self.assertTrue((self.output / "diagram.puml").is_file())
+
+    @unittest.skipUnless(os.environ.get("DRAWIO_OFFICIAL_CLI") or shutil.which("drawio"),
+                         "official draw.io CLI unavailable")
+    def test_official_drawio_freeform_diagram_native_export(self):
+        source = self.root / "freeform.drawio"
+        source.write_text('<mxfile><diagram id="one" name="One"><mxGraphModel><root>'
+                          '<mxCell id="0"/><mxCell id="1" parent="0"/>'
+                          '<mxCell id="n" value="Node" vertex="1" parent="1">'
+                          '<mxGeometry x="40" y="40" width="140" height="60" as="geometry"/>'
+                          '</mxCell></root></mxGraphModel></diagram></mxfile>', encoding="utf-8")
+        executable = os.environ.get("DRAWIO_OFFICIAL_CLI") or shutil.which("drawio")
+        result = self.render("drawio", source, "--engine-cli", executable, "--export", "png")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.output / "diagram.drawio.png").is_file())
+
+    @unittest.skipUnless(ARCHIFY_EXAMPLES and ARCHIFY_EXAMPLES.is_dir(),
+                         "official Archify CLI/examples unavailable")
+    def test_official_archify_accepts_all_five_native_modes(self):
+        examples = {"architecture": "web-app.architecture.json",
+                    "workflow": "incident-response.workflow.json",
+                    "sequence": "cache-miss-request.sequence.json",
+                    "dataflow": "event-stream.dataflow.json",
+                    "lifecycle": "agent-run.lifecycle.json"}
+        executable = ARCHIFY_CLI
+        for kind, filename in examples.items():
+            with self.subTest(kind=kind):
+                self.output = self.root / kind
+                result = self.render("archify", ARCHIFY_EXAMPLES / filename,
+                                     "--engine-cli", executable,
+                                     *(["--export", "png"] if kind == "architecture" else []))
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                receipt = json.loads(result.stdout)
+                self.assertEqual(receipt["diagramType"], kind)
+                self.assertEqual(receipt["officialCheck"], "pass")
+                self.assertTrue((self.output / "diagram.archify.html").is_file())
+                if kind == "architecture":
+                    self.assertTrue((self.output / "diagram.archify.png").is_file())
+
+    @unittest.skipUnless(os.environ.get("MERMAID_OFFICIAL_CLI") or shutil.which("mmdc"),
+                         "official Mermaid CLI unavailable")
+    def test_invalid_native_source_fails_without_stale_export(self):
+        source = self.root / "broken.mmd"
+        source.write_text("this is not Mermaid syntax\n", encoding="utf-8")
+        self.output.mkdir()
+        stale = self.output / "diagram.mermaid.png"
+        stale.write_bytes(b"old")
+        executable = os.environ.get("MERMAID_OFFICIAL_CLI") or shutil.which("mmdc")
+        result = self.render("mermaid", source, "--engine-cli", executable, "--export", "png")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(stale.exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

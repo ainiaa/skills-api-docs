@@ -6,7 +6,7 @@ on:
 
 jobs:
   archify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -23,10 +23,16 @@ jobs:
           node-version: '22'
       - name: Verify pinned Archify checkout
         run: test "$(git -C .archify rev-parse HEAD)" = c826e6c3a7abad19c0f3cd1ca57207d54b1ad8de
+      - name: Verify Chrome for Archify exports
+        run: command -v google-chrome
       - name: Run official Archify acceptance test
         env:
           ARCHIFY_OFFICIAL_CLI: ${{ github.workspace }}/.archify/archify/bin/archify.mjs
         run: python3 scripts/test_architecture.py
+      - name: Run all five native Archify mode tests
+        env:
+          ARCHIFY_OFFICIAL_CLI: ${{ github.workspace }}/.archify/archify/bin/archify.mjs
+        run: python3 -m unittest discover -s scripts -p test_native_diagrams.py
 
   diagram-renderers:
     runs-on: ubuntu-24.04
@@ -59,4 +65,4 @@ jobs:
           MERMAID_OFFICIAL_CLI: ${{ github.workspace }}/.renderers/mermaid/node_modules/.bin/mmdc
           PLANTUML_OFFICIAL_CLI: /tmp/plantuml
           DRAWIO_OFFICIAL_CLI: /tmp/drawio
-        run: python3 scripts/test_architecture.py
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
