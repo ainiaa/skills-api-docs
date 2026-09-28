@@ -30,7 +30,7 @@ python3 scripts/render_native_diagram.py --engine mermaid --input /tmp/classes.m
   --source-repo /path/to/repo --evidence /tmp/diagram.evidence.json --export png
 ```
 
-Archify 原生通道接受官方 `architecture`、`workflow`、`sequence`、`dataflow`、`lifecycle` 五种模式。源码驱动的原生图须附[证据清单](skills/understand-arch/references/native-diagrams.md)：逐条关联图中文字与当前源码行；回执会报告 `sourceEvidence: anchors_validated` 和 `claimSemantics: not_proven`。没有清单则报告 `sourceEvidence: not_checked`。`officialCheck: pass` 只表示原生文件经官方引擎验收，图的业务解释和视觉质量仍要审阅。各引擎官方目录与当前自动生成缺口见[能力审计](docs/RENDERER_CAPABILITY_AUDIT.md)。
+Archify 原生通道接受官方 `architecture`、`workflow`、`sequence`、`dataflow`、`lifecycle` 五种模式。源码驱动的原生图须附[证据清单](skills/understand-arch/references/native-diagrams.md)：v2 清单逐项覆盖图中的材料并关联当前源码行；回执会报告 `sourceEvidence: anchors_validated`、`claimCoverage: complete` 和 `claimSemantics: not_proven`。没有清单则报告 `sourceEvidence: not_checked`。`officialCheck: pass` 只表示原生文件经官方引擎验收，图的业务解释和视觉质量仍要审阅。各引擎官方目录与当前自动生成缺口见[能力审计](docs/RENDERER_CAPABILITY_AUDIT.md)。
 
 `context` 不设模块、类或文件数量上限，列出所有源码文件及扫描到的声明、路由、配置键和表名线索；声明扫描复用现有 tree-sitter 解析能力（未安装可选语法包时退回逐行候选扫描）。已有 `.ua/knowledge-graph.json` 与 `domain-graph.json` 时也会提供给 agent，并报告提交版本不一致。源码行校验能拦截不存在的引用；新鲜图谱或现有 CodeGraph 索引还会核对关键类的位置。业务能力和关系仍是带证据的推断，需审阅 `INFERRED`／`AMBIGUOUS` 项。`render` 用可重复的 `--format` 选择引擎，默认只交付原生文件与已验证 IR；`--export-for 引擎:格式` 按需求追加实际渲染的文件。选中 Archify 且 CLI 可用时会交付 HTML。`rendererChecks` 记录所选 Mermaid、PlantUML、draw.io 引擎的语法与导出验收状态，不能替代实际图片审查；新 IR v2 的回执标记 `visualReview: required`。Archify 使用 `archifyRendered` 和 `archifyReceipt`。任一请求的导出失败时命令返回非零，并清理对应旧成品。
 

@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+- `understand-arch` 强化来源与覆盖校验：IR v2 的 `EXTRACTED` 名称／关系标签须逐字出现在引用源码；原生证据清单 v2 按 Mermaid/PlantUML 行、draw.io 单元和 Archify typed 项逐项检查覆盖，旧清单保持可读但标记覆盖未检查；架构总览可声明省略事实并校验配套细节 IR。
+- C4 容器图与组件图在 draw.io、PlantUML、Mermaid 中显式绘制系统／容器范围；draw.io 总览的跨层线路避开已占用通道，细节图模块边界不再遮住副标题。以 IES 项目补充 Redis 依赖细节图并验证总览覆盖记录。
 - `understand-arch` 新增 draw.io `architecture-landscape` 总览视图：默认把源码支持的入口、模块边界、业务服务、数据设施和外部依赖分层；节点角色使用不同形状与色彩，主／辅助／依赖链路以颜色和线型区分，并以编号关系索引保持长标签可读。单图超出 12 个节点或 12 条关系、标签超长时拒绝交付，要求拆成概览与聚焦视图；以 FA 模块无参考图案例完成真实导出与审图。
 - `understand-arch` 增加面向 Mermaid、PlantUML、draw.io 和 Archify 官方原生语法的源码绘图流程：先选图型、核对代码、编写可编辑原生文件，再交给对应官方引擎验收与按需导出。新增逐条关联图中文字、来源状态和当前源码行的证据清单；无效引用在写入成品前拒绝，回执区分锚点验证与尚未证明的业务解释。
 - 对照四个引擎的官方图型目录新增[能力审计](docs/RENDERER_CAPABILITY_AUDIT.md)；增加 `render_native_diagram.py`，可直接用官方 CLI 验证并导出 Mermaid、PlantUML、draw.io 原生文件及 Archify 五种 typed JSON 模式。回执明确区分官方验收与未检查的源码证据，CI 增加各引擎原生图测试。

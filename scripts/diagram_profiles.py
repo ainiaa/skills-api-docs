@@ -1,5 +1,6 @@
 """Typed source-backed diagram views and their supported renderers."""
 
+import json
 import re
 import unicodedata
 import xml.etree.ElementTree as ET
@@ -97,7 +98,10 @@ def validate_view(ir, root):
             _check_xml_text(item.get(key), f"{label}.{key}", problems)
         if not _oneof(item.get("provenance"), {"EXTRACTED", "INFERRED", "AMBIGUOUS"}):
             problems.append(f"{label}: invalid provenance")
-        _check_evidence(item.get("evidence"), root, label, problems)
+        cited_lines = _check_evidence(item.get("evidence"), root, label, problems)
+        if item.get("provenance") == "EXTRACTED" and _word(item.get("name")) and cited_lines:
+            if not any(item["name"] in line for line in cited_lines):
+                problems.append(f"{label}: EXTRACTED name is not literal on cited source lines")
         kind = item.get("type")
         allowed = (C4_TYPES[profile] if profile in C4_TYPES else
                    LANDSCAPE_TYPES if profile == "architecture-landscape" else
@@ -158,7 +162,10 @@ def validate_view(ir, root):
             _check_xml_text(item.get(key), f"{label}.{key}", problems)
         if not _oneof(item.get("provenance"), {"EXTRACTED", "INFERRED", "AMBIGUOUS"}):
             problems.append(f"{label}: invalid provenance")
-        _check_evidence(item.get("evidence"), root, label, problems)
+        cited_lines = _check_evidence(item.get("evidence"), root, label, problems)
+        if item.get("provenance") == "EXTRACTED" and _word(item.get("label")) and cited_lines:
+            if not any(item["label"] in line for line in cited_lines):
+                problems.append(f"{label}: EXTRACTED label is not literal on cited source lines")
         if profile in C4_TYPES:
             if source == target:
                 problems.append(f"{label}: C4 self relationship is not allowed")
@@ -203,6 +210,57 @@ def validate_view(ir, root):
     return problems
 
 
+def validate_companion_views(ir, root, ir_path):
+    """Verify declared overview omissions are present in a nearby detail IR."""
+    if ir.get("profile") != "architecture-landscape":
+        return "not_applicable", []
+    coverage = ir.get("coverage")
+    if coverage is None:
+        return "not_declared", []
+    if not isinstance(coverage, dict) or not isinstance(coverage.get("omitted"), list):
+        return "fail", ["coverage.omitted must be a list"]
+    problems = []
+    base = Path(ir_path).resolve().parent
+    for index, item in enumerate(coverage["omitted"]):
+        label = f"coverage.omitted[{index}]"
+        if not isinstance(item, dict):
+            problems.append(f"{label}: expected object")
+            continue
+        if not _word(item.get("reason")):
+            problems.append(f"{label}: reason is required")
+        _check_evidence(item.get("evidence"), Path(root).resolve(), label, problems)
+        element = item.get("element")
+        relation = item.get("relation")
+        if not _word(element) and not isinstance(relation, dict):
+            problems.append(f"{label}: element or relation is required")
+        detail_name = item.get("detailView")
+        if not _word(detail_name):
+            problems.append(f"{label}: detailView is required")
+            continue
+        detail_path = (base / detail_name).resolve()
+        if not detail_path.is_relative_to(base) or detail_path == Path(ir_path).resolve():
+            problems.append(f"{label}: detailView must be another IR within {base}")
+            continue
+        try:
+            detail = json.loads(detail_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, ValueError) as error:
+            problems.append(f"{label}: detailView is unreadable: {error}")
+            continue
+        detail_problems = validate_view(detail, root)
+        if detail_problems:
+            problems.append(f"{label}: detailView is invalid: {'; '.join(detail_problems)}")
+            continue
+        if _word(element) and not any(node["id"] == element for node in detail["elements"]):
+            problems.append(f"{label}: detailView is missing element {element}")
+        if isinstance(relation, dict):
+            if not all(_word(relation.get(key)) for key in ("from", "to", "label")):
+                problems.append(f"{label}: relation needs from, to, and label")
+            elif not any(all(link.get(key) == relation[key] for key in
+                             ("from", "to", "label")) for link in detail["relations"]):
+                problems.append(f"{label}: detailView is missing relation {relation}")
+    return ("fail" if problems else "pass"), problems
+
+
 def _safe(value):
     return str(value).replace("\\", "/").replace('"', "'").replace("\n", " ").replace("\r", " ").replace("<", "(").replace(">", ")").replace(";", " ").replace("`", "'")
 
@@ -223,9 +281,9 @@ def _xml(ir, title, legend=""):
     return mx, root
 
 
-def _cell(root, ident, value, x, y, width, height, style):
+def _cell(root, ident, value, x, y, width, height, style, parent="1"):
     cell = ET.SubElement(root, "mxCell", {"id": ident, "value": value, "style": style,
-                                          "vertex": "1", "parent": "1"})
+                                          "vertex": "1", "parent": parent})
     ET.SubElement(cell, "mxGeometry", {"x": str(x), "y": str(y), "width": str(width),
                                        "height": str(height), "as": "geometry"})
     return cell
@@ -295,6 +353,24 @@ def _drawio(ir):
                 yy = y + 45 + (index // columns) * 160
                 positions[item["id"]] = (x, yy, 350, 110)
             y += height + 24
+        scoped_type = ("container" if profile == "c4-container" else
+                       "component" if profile == "c4-component" else None)
+        scope_origin = None
+        if scoped_type:
+            scoped_positions = [positions[item["id"]] for item in ir["elements"]
+                                if item["type"] == scoped_type]
+            left = min(x for x, _, _, _ in scoped_positions) - 24
+            top = min(y for _, y, _, _ in scoped_positions) - 42
+            right = max(x + width for x, _, width, _ in scoped_positions) + 24
+            bottom = max(y + height for _, y, _, height in scoped_positions) + 24
+            scope_origin = (left, top)
+            scope_name = (ir["scope"]["system"] if profile == "c4-container" else
+                          ir["scope"]["container"])
+            _cell(root, "scope_boundary", scope_name, left, top, right - left,
+                  bottom - top,
+                  "rounded=1;whiteSpace=wrap;html=0;align=left;verticalAlign=top;"
+                  "spacingLeft=14;spacingTop=10;fontSize=16;fontStyle=1;"
+                  "fillColor=#F8FCF9;strokeColor=#8DB7A0;strokeWidth=2;")
         edge_groups = {}
         for relation in ir["relations"]:
             key = (positions[relation["from"]][1], positions[relation["to"]][1])
@@ -339,8 +415,12 @@ def _drawio(ir):
             label = (item["name"] + "\n[" + item.get("technology", kind_label.get(item["type"], item["type"])) +
                      "]\n" + item["description"])
             fill = "#DBEAFE" if item["type"] in {"component", "container"} else "#F1F5F9"
-            _cell(root, "node_" + item["id"], label, x, y, width, height,
-                  f"rounded=1;whiteSpace=wrap;html=0;fillColor={fill};strokeColor=#475569;fontSize=15;spacing=8;")
+            parent = "scope_boundary" if item["type"] == scoped_type else "1"
+            node_x, node_y = ((x - scope_origin[0], y - scope_origin[1])
+                              if parent == "scope_boundary" else (x, y))
+            _cell(root, "node_" + item["id"], label, node_x, node_y, width, height,
+                  f"rounded=1;whiteSpace=wrap;html=0;fillColor={fill};strokeColor=#475569;fontSize=15;spacing=8;",
+                  parent=parent)
     elif profile == "uml-sequence":
         ordered = sorted(ir["relations"], key=lambda relation: relation["order"])
         centers = {item["id"]: 200 + index * 300 for index, item in enumerate(ir["elements"])}
@@ -454,13 +534,28 @@ def _plantuml(ir):
         mapping = {"person": "Person", "software_system": "System",
                    "external_system": "System_Ext", "container": "Container",
                    "component": "Component"}
-        for item in ir["elements"]:
+        scoped_type = ("container" if profile == "c4-container" else
+                       "component" if profile == "c4-component" else None)
+        scoped = [item for item in ir["elements"] if item["type"] == scoped_type]
+        supporting = [item for item in ir["elements"] if item["type"] != scoped_type]
+        boundary_alias = "view_scope"
+        while any(item["id"] == boundary_alias for item in ir["elements"]):
+            boundary_alias += "_"
+        if scoped_type:
+            macro = "System_Boundary" if profile == "c4-container" else "Container_Boundary"
+            scope_name = ir["scope"]["system" if profile == "c4-container" else "container"]
+            lines.append(f'{macro}({boundary_alias}, "{_safe(scope_name)}") {{')
+        for index, item in enumerate(scoped + supporting):
+            if scoped_type and index == len(scoped):
+                lines.append("}")
             macro = mapping[item["type"]]
             args = [item["id"], '"' + _safe(item["name"]) + '"']
             if item["type"] in {"container", "component"}:
                 args.append('"' + _safe(item["technology"]) + '"')
             args.append('"' + _safe(item["description"]) + '"')
             lines.append(macro + "(" + ", ".join(args) + ")")
+        if scoped_type and not supporting:
+            lines.append("}")
         for relation in ir["relations"]:
             args = [relation["from"], relation["to"], '"' + _safe(relation["label"]) + '"']
             if relation.get("technology"):
@@ -499,12 +594,27 @@ def _mermaid(ir):
         mapping = {"person": "Person", "software_system": "System",
                    "external_system": "System_Ext", "container": "Container",
                    "component": "Component"}
-        for item in ir["elements"]:
+        scoped_type = ("container" if profile == "c4-container" else
+                       "component" if profile == "c4-component" else None)
+        scoped = [item for item in ir["elements"] if item["type"] == scoped_type]
+        supporting = [item for item in ir["elements"] if item["type"] != scoped_type]
+        boundary_alias = "view_scope"
+        while any(item["id"] == boundary_alias for item in ir["elements"]):
+            boundary_alias += "_"
+        if scoped_type:
+            macro = "System_Boundary" if profile == "c4-container" else "Container_Boundary"
+            scope_name = ir["scope"]["system" if profile == "c4-container" else "container"]
+            lines.append(f'{macro}({boundary_alias}, "{_safe(scope_name)}") {{')
+        for index, item in enumerate(scoped + supporting):
+            if scoped_type and index == len(scoped):
+                lines.append("}")
             args = [item["id"], '"' + _safe(item["name"]) + '"']
             if item["type"] in {"container", "component"}:
                 args.append('"' + _safe(item["technology"]) + '"')
             args.append('"' + _safe(item["description"]) + '"')
             lines.append(mapping[item["type"]] + "(" + ", ".join(args) + ")")
+        if scoped_type and not supporting:
+            lines.append("}")
         for relation in ir["relations"]:
             lines.append(f'Rel({relation["from"]}, {relation["to"]}, "{_safe(relation["label"])}")')
     elif profile == "uml-sequence":

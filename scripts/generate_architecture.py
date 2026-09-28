@@ -13,7 +13,7 @@ from pathlib import Path
 from architecture_ir import build_context, validate_architecture
 from architecture_renderers import render_archify, render_drawio, render_mermaid, render_plantuml
 from codegraph_context import load_codegraph
-from diagram_profiles import CAPABILITIES, render_view, validate_view
+from diagram_profiles import CAPABILITIES, render_view, validate_companion_views, validate_view
 
 EXPORT_FORMATS = {
     "mermaid": ("svg", "png", "pdf"),
@@ -185,11 +185,16 @@ def main(argv=None):
         print(json.dumps({"valid": False, "problems": [f"IR is unreadable: {error}"]}, ensure_ascii=False))
         return 1
     problems = validate_view(ir, root) if isinstance(ir, dict) and ir.get("version") == 2 else validate_architecture(ir, root)
+    coverage_check = "not_applicable"
+    if not problems and ir["version"] == 2:
+        coverage_check, coverage_problems = validate_companion_views(ir, root, args.ir)
+        problems.extend(coverage_problems)
     if problems:
         print(json.dumps({"valid": False, "problems": problems}, ensure_ascii=False, indent=2))
         return 1
     if args.command == "validate":
-        summary = ({"profile": ir["profile"], "elements": len(ir["elements"])}
+        summary = ({"profile": ir["profile"], "elements": len(ir["elements"]),
+                    "coverageCheck": coverage_check}
                    if ir["version"] == 2 else {"domains": len(ir["domains"])})
         print(json.dumps({"valid": True, **summary}, ensure_ascii=False))
         return 0
@@ -238,6 +243,7 @@ def main(argv=None):
     if ir["version"] == 2:
         result["profile"] = ir["profile"]
         result["visualReview"] = "required"
+        result["coverageCheck"] = coverage_check
     failures = []
     warnings = []
     if ir["version"] == 2 and ir["profile"].startswith("c4-") and "mermaid" in selected:

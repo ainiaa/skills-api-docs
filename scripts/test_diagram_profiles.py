@@ -104,6 +104,24 @@ class DiagramProfilesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported"):
             render_view(ir, "mermaid")
 
+    def test_extracted_view_claims_must_match_cited_source_text(self):
+        ir = self.view("architecture-landscape", [
+            self.item("api", "entrypoint", "支付网关", description="处理支付",
+                      provenance="EXTRACTED"),
+            self.item("db", "database", "交易库", description="存储交易",
+                      provenance="EXTRACTED")], [
+            self.relation("api", "db", "清算资金", kind="primary",
+                          provenance="EXTRACTED")])
+        problems = validate_view(ir, self.root)
+        self.assertTrue(any("EXTRACTED" in problem and "name" in problem for problem in problems))
+        self.assertTrue(any("EXTRACTED" in problem and "label" in problem for problem in problems))
+        ir["elements"][0]["name"] = "Demo"
+        ir["elements"][0]["evidence"] = [{"path": "src/Demo.java", "line": 1,
+                                          "quote": "class Demo"}]
+        ir["elements"][1]["name"] = "service.save()"
+        ir["relations"][0]["label"] = "service.save()"
+        self.assertEqual(validate_view(ir, self.root), [])
+
     def test_landscape_requires_overview_density(self):
         elements = [self.item("entry", "entrypoint", "入口", description="接收请求")]
         elements.extend(self.item(f"service{index}", "service", f"服务{index}",
@@ -194,6 +212,47 @@ class DiagramProfilesTest(unittest.TestCase):
               for name in ("db", "engine", "bank", "order")}
         self.assertEqual(len(ys), 1)
 
+    def test_landscape_keeps_separate_lanes_for_long_cross_row_edges(self):
+        ir = self.view("architecture-landscape", [
+            self.item("pay", "service", "付款", description="处理付款"),
+            self.item("flow", "service", "流水", description="处理流水"),
+            self.item("finance", "service", "融资", description="处理融资"),
+            self.item("dao", "adapter", "数据访问", description="持久化"),
+            self.item("cache", "cache", "Redis", description="缓存"),
+            self.item("db", "database", "MySQL", description="存储"),
+            self.item("engine", "external_system", "会计引擎", description="记账"),
+            self.item("bank", "external_system", "银行服务", description="查余额"),
+            self.item("order", "external_system", "单据中心", description="收流水")], [
+            self.relation("pay", "dao", "读写付款", kind="dependency"),
+            self.relation("pay", "cache", "缓存", kind="dependency"),
+            self.relation("pay", "engine", "会计推送", kind="primary"),
+            self.relation("flow", "dao", "读写流水", kind="dependency"),
+            self.relation("flow", "bank", "查余额", kind="dependency"),
+            self.relation("flow", "order", "推送流水", kind="dependency"),
+            self.relation("dao", "db", "持久化", kind="dependency")])
+        self.assertEqual(validate_view(ir, self.root), [])
+        xml = ET.fromstring(render_view(ir, "drawio"))
+        cells = {cell.get("id"): cell for cell in xml.iter("mxCell")}
+        lanes = []
+        for edge in ("edge_2", "edge_4", "edge_5"):
+            points = cells[edge].findall(".//mxPoint")
+            self.assertGreaterEqual(len(points), 4)
+            lanes.append(float(points[1].get("x")))
+        self.assertTrue(all(abs(a - b) >= 12 for index, a in enumerate(lanes)
+                            for b in lanes[index + 1:]), lanes)
+
+    def test_landscape_detail_scope_does_not_cover_subtitle(self):
+        ir = self.view("architecture-landscape", [
+            self.item("pay", "service", "Payment", description="Handles payments"),
+            self.item("redis", "cache", "Redis", description="Locks payments")], [
+            self.relation("pay", "redis", "Locks", kind="dependency")])
+        xml = ET.fromstring(render_view(ir, "drawio"))
+        cells = {cell.get("id"): cell for cell in xml.iter("mxCell")}
+        subtitle = cells["subtitle"].find("mxGeometry")
+        boundary = cells["scope_boundary"].find("mxGeometry")
+        self.assertGreaterEqual(float(boundary.get("y")),
+                                float(subtitle.get("y")) + float(subtitle.get("height")) + 12)
+
     def test_c4_component_is_source_backed_and_drawio_layout_has_no_node_overlap(self):
         ir = self.view("c4-component", [
             self.item("api", "component", "API", description="Receives requests",
@@ -225,6 +284,30 @@ class DiagramProfilesTest(unittest.TestCase):
         self.assertTrue(all(len(cell.findall(".//mxPoint")) >= 2 for cell in edges))
         self.assertIn("!include <C4/C4_Component>", render_view(ir, "plantuml"))
         self.assertIn("C4Component", render_view(ir, "mermaid"))
+
+    def test_c4_scope_is_visible_and_contains_the_scoped_level(self):
+        for profile, member_type, boundary in (
+                ("c4-container", "container", "System_Boundary"),
+                ("c4-component", "component", "Container_Boundary")):
+            with self.subTest(profile=profile):
+                ir = self.view(profile, [
+                    self.item("inside", member_type, "Inside", description="Works",
+                              technology="Java", band="application"),
+                    self.item("outside", "external_system", "Outside",
+                              description="External", band="external")], [])
+                ir["scope"] = {"system": "Scoped System", "container": "Scoped Service"}
+                self.assertEqual(validate_view(ir, self.root), [])
+                xml = ET.fromstring(render_view(ir, "drawio"))
+                cells = {cell.get("id"): cell for cell in xml.iter("mxCell")}
+                scope = cells["scope_boundary"]
+                expected = "Scoped System" if profile == "c4-container" else "Scoped Service"
+                self.assertIn(expected, scope.get("value"))
+                self.assertEqual(cells["node_inside"].get("parent"), "scope_boundary")
+                self.assertNotEqual(cells["node_outside"].get("parent"), "scope_boundary")
+                for engine in ("plantuml", "mermaid"):
+                    rendered = render_view(ir, engine)
+                    self.assertIn(boundary, rendered)
+                    self.assertIn(expected, rendered)
 
     def test_chinese_c4_view_has_chinese_legend(self):
         ir = self.view("c4-component", [
@@ -496,6 +579,41 @@ class DiagramProfilesTest(unittest.TestCase):
         self.assertNotEqual(wrong.returncode, 0)
         self.assertIn("unsupported", wrong.stdout + wrong.stderr)
 
+    def test_landscape_omission_requires_a_valid_companion_view(self):
+        overview = self.view("architecture-landscape", [
+            self.item("pay", "service", "Payment", description="Handles payments"),
+            self.item("db", "database", "Database", description="Stores payments")], [
+            self.relation("pay", "db", "Persists", kind="dependency")],
+            coverage={"omitted": [{"element": "redis",
+                                    "relation": {"from": "pay", "to": "redis",
+                                                 "label": "Locks"},
+                                    "reason": "Detailed runtime dependency",
+                                    "detailView": "payment-detail.json",
+                                    "evidence": self.evidence}]})
+        detail = self.view("architecture-landscape", [
+            self.item("pay", "service", "Payment", description="Handles payments"),
+            self.item("redis", "cache", "Redis", description="Locks payments")], [
+            self.relation("pay", "redis", "Locks", kind="dependency")])
+        overview_path = self.root / "overview.json"
+        detail_path = self.root / "payment-detail.json"
+        overview_path.write_text(json.dumps(overview), encoding="utf-8")
+        detail_path.write_text(json.dumps(detail), encoding="utf-8")
+        cli = Path(__file__).with_name("generate_architecture.py")
+        command = [sys.executable, str(cli), "validate", "--source", str(self.root),
+                   "--ir", str(overview_path)]
+        good = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(good.returncode, 0, good.stdout + good.stderr)
+        self.assertEqual(json.loads(good.stdout)["coverageCheck"], "pass")
+        detail["relations"] = []
+        detail_path.write_text(json.dumps(detail), encoding="utf-8")
+        bad = subprocess.run(command, capture_output=True, text=True)
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertIn("missing relation", bad.stdout + bad.stderr)
+        detail_path.unlink()
+        missing = subprocess.run(command, capture_output=True, text=True)
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn("detailView", missing.stdout + missing.stderr)
+
     @unittest.skipUnless(all(os.environ.get(name) or shutil.which(binary) for name, binary in
                              (("DRAWIO_OFFICIAL_CLI", "drawio"),
                               ("MERMAID_OFFICIAL_CLI", "mmdc"),
@@ -513,6 +631,13 @@ class DiagramProfilesTest(unittest.TestCase):
                 self.item("api", "component", "API", description="Receives events", technology="Java"),
                 self.item("service", "component", "Service", description="Stores events", technology="Java")],
                 [self.relation("api", "service", "Calls")]), ("drawio", "plantuml", "mermaid")),
+            (self.view("c4-container", [
+                self.item("app", "container", "Application", description="Handles events",
+                          technology="Java"),
+                self.item("db", "container", "Database", description="Stores events",
+                          technology="MySQL")],
+                [self.relation("app", "db", "Writes", technology="JDBC")]),
+             ("drawio", "plantuml", "mermaid")),
             (self.view("uml-sequence", [self.item("api", "participant", "API"),
                                          self.item("service", "participant", "Service")],
                 [self.relation("api", "service", "Calls", kind="call", order=1),

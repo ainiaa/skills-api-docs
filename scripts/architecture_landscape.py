@@ -123,7 +123,7 @@ def render_landscape(ir):
     page_height = max(y + 25, 150 + len(ir["relations"]) * 59)
     model.set("pageHeight", str(page_height))
 
-    scope_start = stage_geometry.get("scope", (0, 0))[0] - 65
+    scope_start = max(125, stage_geometry.get("scope", (0, 0))[0] - 65)
     scope_end = (stage_geometry.get("scope", (0, 0))[0] +
                  stage_geometry.get("scope", (0, 0))[1] + 28)
     has_scope = "scope" in stage_geometry
@@ -180,6 +180,7 @@ def render_landscape(ir):
         group.sort(key=lambda relation: positions[relation["to"]][0])
     for target, group in incoming.items():
         group.sort(key=lambda relation: positions[relation["from"]][0])
+    used_bypass_lanes = []
     for index, relation in enumerate(ir["relations"]):
         source = relation["from"]
         target = relation["to"]
@@ -212,7 +213,10 @@ def render_landscape(ir):
                          if MAIN_LEFT + 12 <= candidate <= MAIN_LEFT + MAIN_WIDTH - 12
                          and all(candidate <= left - 12 or candidate >= right + 12
                                  for left, right in obstacles)]
-                gutter = min(lanes, key=lambda candidate: abs(candidate - target_center))
+                gutter = min(lanes, key=lambda candidate: (
+                    any(abs(candidate - used) < 12 for used in used_bypass_lanes),
+                    abs(candidate - target_center)))
+                used_bypass_lanes.append(gutter)
                 track = sy + sh + 12
                 points = [(sx + sw * source_port, track), (gutter, track),
                           (gutter, ty - 12), (target_center, ty - 12)]

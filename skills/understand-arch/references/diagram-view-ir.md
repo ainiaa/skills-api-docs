@@ -21,6 +21,7 @@ Use IR v2 for new source-based diagrams whose profile is listed here. Use [offic
 ```
 
 `evidence` always uses a path relative to the analysed repository, a one-based line number, and a verbatim substring of that line. Every element and relation needs evidence and `EXTRACTED`, `INFERRED`, or `AMBIGUOUS` provenance. Graph IDs may help find evidence, but must not appear as visible diagram labels.
+An `EXTRACTED` element name or relation label must occur literally on one cited source line. Use `INFERRED` for a translated label or grouped architectural responsibility; the source anchor alone does not prove that interpretation.
 
 ## Profiles
 
@@ -37,6 +38,18 @@ Use IR v2 for new source-based diagrams whose profile is listed here. Use [offic
 C4 elements need `description`; components and containers also need `technology`. The optional `band` changes draw.io layout, not C4 meaning: `entry`, `application`, `integration`, `storage`, `external`. Choose it from actual responsibility. A C4 component view describes one container and needs at least one component inside it. A C4 container view needs at least one container inside the system. Supporting elements may show direct dependencies outside the scope. Do not place raw database tables or methods as C4 components.
 
 `architecture-landscape` is an overview convention for code-derived architecture when the user has not asked for strict C4. It displays source-backed entrances, an editable `scope.container` boundary around services and adapters, and a combined data/external dependency row. Node role controls native draw.io shape and color; relation `kind` controls red primary, blue secondary, or dashed orange dependency lines. Numbers on edges refer to a relation register with the full label and endpoints, keeping the canvas readable. `status: planned` is optional and requires direct evidence; never copy planned elements from a reference diagram into a code-derived view. A landscape needs concise `name` and `description` text, at most 12 elements and 12 relations. If larger, create an overview and focused views; do not omit evidence-backed details without a companion view. This profile is only supported by draw.io and does not claim C4 conformance.
+
+For each new landscape overview, record the source-backed candidates left off that canvas in `coverage.omitted` (use an empty list when none were found). Each entry has a reason, source evidence, a `detailView` filename beside the overview IR, and either an `element` ID, a relation `{from,to,label}`, or both. The CLI validates that the detail IR is source-backed and actually contains the stated element/relation; `coverageCheck: pass` confirms this declared inventory, while `not_declared` marks older IRs. This cannot discover candidates an author never recorded, so review the candidate list against the repository before delivery.
+
+```json
+"coverage": {"omitted": [{
+  "element": "redis",
+  "relation": {"from": "payment", "to": "redis", "label": "付款幂等锁"},
+  "reason": "总览优先展示主要外部业务系统",
+  "detailView": "payment-detail.json",
+  "evidence": [{"path": "src/PaymentService.java", "line": 42, "quote": "redisManager.putnxCache"}]
+}]}
+```
 
 Sequence messages must be ordered. BPMN sequence flow may cross lanes within one pool but cannot cross pools; message flow connects different pools. The implemented BPMN subset does not claim executable BPMN XML conformance. An ERD entity may have `fields: [{"name":"id","type":"bigint","key":"PK"}]`; keys may be `PK`, `FK`, `UK`, or omitted. Only assert cardinality when repository evidence establishes it; if it does not, explain the gap instead of guessing.
 

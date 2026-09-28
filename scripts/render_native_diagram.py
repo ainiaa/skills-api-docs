@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from architecture_ir import _check_evidence
@@ -19,6 +20,13 @@ BINARIES = {"mermaid": "mmdc", "plantuml": "plantuml", "drawio": "drawio",
             "archify": "archify"}
 ARCHIFY_TYPES = {"architecture", "workflow", "sequence", "dataflow", "lifecycle"}
 PROVENANCE = {"EXTRACTED", "INFERRED", "AMBIGUOUS"}
+ARCHIFY_MATERIAL = {
+    "architecture": ("components", "boundaries", "connections"),
+    "workflow": ("lanes", "phases", "groups", "nodes", "edges"),
+    "sequence": ("participants", "segments", "messages", "activations"),
+    "dataflow": ("stages", "nodes", "flows"),
+    "lifecycle": ("lanes", "states", "transitions"),
+}
 
 
 def _result(ok, engine, artifacts=(), **extra):
@@ -55,6 +63,48 @@ def _archify_export(binary, html, output, formats):
             return [], str(error)
 
 
+def _material_refs(source, engine, diagram_type):
+    """Identify authored diagram statements whose source claims need anchors."""
+    if engine in {"mermaid", "plantuml"}:
+        refs = {}
+        in_frontmatter = False
+        for number, line in enumerate(source.read_text(encoding="utf-8").splitlines(), 1):
+            value = line.strip()
+            if value == "---":
+                in_frontmatter = not in_frontmatter
+                continue
+            if in_frontmatter or not value or value in {"{", "}"}:
+                continue
+            if value.startswith(("%%", "'", "//")):
+                continue
+            if engine == "plantuml":
+                if value.startswith(("@startuml", "@enduml", "!include", "!pragma",
+                                     "title ", "skinparam ", "hide ", "LAYOUT_",
+                                     "left to right direction", "legend", "endlegend")):
+                    continue
+            elif value.startswith(("classDiagram", "flowchart ", "graph ",
+                                   "sequenceDiagram", "erDiagram", "stateDiagram",
+                                   "gantt", "journey", "mindmap", "timeline", "pie",
+                                   "C4Context", "C4Container", "C4Component",
+                                   "C4Dynamic", "C4Deployment", "title ", "direction ",
+                                   "classDef ", "style ", "linkStyle ", "%%{")):
+                continue
+            refs[f"line:{number}"] = value
+        return refs
+    if engine == "drawio":
+        root = ET.parse(source).getroot()
+        return {f"cell:{cell.get('id')}": ET.tostring(cell, encoding="unicode")
+                for cell in root.iter("mxCell")
+                if (cell.get("vertex") == "1" or cell.get("edge") == "1")
+                and cell.get("id") and not cell.get("style", "").startswith("text;")}
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("Archify diagram must be a JSON object")
+    return {f"/{key}/{index}": json.dumps(item, ensure_ascii=False)
+            for key in ARCHIFY_MATERIAL.get(diagram_type, ())
+            for index, item in enumerate(payload.get(key, []))}
+
+
 def _validate_source_manifest(path, root, source, engine, actual_type):
     try:
         manifest = json.loads(path.read_text(encoding="utf-8"))
@@ -64,8 +114,9 @@ def _validate_source_manifest(path, root, source, engine, actual_type):
     if not isinstance(manifest, dict):
         return None, ["evidence manifest must be an object"]
     problems = []
-    if manifest.get("version") != 1:
-        problems.append("evidence manifest version must be 1")
+    version = manifest.get("version")
+    if version not in {1, 2}:
+        problems.append("evidence manifest version must be 1 or 2")
     if manifest.get("engine") != engine:
         problems.append(f"evidence manifest engine must be {engine}")
     diagram_type = manifest.get("diagramType")
@@ -77,19 +128,43 @@ def _validate_source_manifest(path, root, source, engine, actual_type):
     if not isinstance(claims, list) or not claims:
         problems.append("evidence manifest claims must be a non-empty list")
         claims = []
+    material = {}
+    if version == 2:
+        try:
+            material = _material_refs(source, engine, actual_type)
+        except (OSError, UnicodeError, ValueError, ET.ParseError) as error:
+            problems.append(f"native source cannot be inventoried: {error}")
+    covered = set()
     for index, claim in enumerate(claims):
         label = f"claims[{index}]"
         if not isinstance(claim, dict):
             problems.append(f"{label}: expected object")
             continue
-        if not isinstance(claim.get("statement"), str) or not claim["statement"].strip():
+        statement = claim.get("statement")
+        if not isinstance(statement, str) or not statement.strip():
             problems.append(f"{label}: statement must be non-empty")
         artifact_quote = claim.get("artifactQuote")
         if not isinstance(artifact_quote, str) or not artifact_quote.strip() or artifact_quote not in diagram_text:
             problems.append(f"{label}: artifactQuote must occur verbatim in native source")
         if claim.get("provenance") not in PROVENANCE:
             problems.append(f"{label}: provenance must be EXTRACTED, INFERRED, or AMBIGUOUS")
-        _check_evidence(claim.get("evidence"), root, label, problems)
+        cited_lines = _check_evidence(claim.get("evidence"), root, label, problems)
+        if version == 2:
+            ref = claim.get("artifactRef")
+            if ref not in material:
+                problems.append(f"{label}: artifactRef is not a material diagram item: {ref}")
+            else:
+                covered.add(ref)
+                if isinstance(artifact_quote, str) and artifact_quote not in material[ref]:
+                    problems.append(f"{label}: artifactQuote must occur in {ref}")
+            if (claim.get("provenance") == "EXTRACTED" and cited_lines and
+                    isinstance(statement, str) and statement.strip() and not any(
+                        statement in line for line in cited_lines)):
+                problems.append(f"{label}: EXTRACTED statement is not literal on cited source lines")
+    if version == 2:
+        missing = sorted(set(material) - covered)
+        if missing:
+            problems.append("evidence manifest lacks claims for: " + ", ".join(missing))
     return manifest, problems
 
 
@@ -148,6 +223,8 @@ def main(argv=None):
             parser.error("; ".join(problems))
 
     metadata = {"sourceEvidence": "anchors_validated" if manifest else "not_checked",
+                "claimCoverage": ("complete" if manifest and manifest["version"] == 2 else
+                                  "not_checked"),
                 "claimSemantics": "not_proven" if manifest else "not_checked"}
     if manifest:
         metadata.update({"claimCount": len(manifest["claims"]),
