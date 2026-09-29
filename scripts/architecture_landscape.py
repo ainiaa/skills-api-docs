@@ -247,3 +247,39 @@ def render_landscape(ir):
               f"fontSize=13;fontColor=#334155;fillColor=#FFFFFF;strokeColor={color};strokeWidth=1.5;")
 
     return ET.tostring(mx, encoding="unicode") + "\n"
+
+
+def check_landscape_geometry(xml):
+    """Check card geometry in the editable draw.io source; image review remains required."""
+    model = ET.fromstring(xml).find(".//mxGraphModel")
+    if model is None:
+        return ["draw.io model is missing"]
+    width = float(model.get("pageWidth", "0"))
+    height = float(model.get("pageHeight", "0"))
+    cells = {cell.get("id"): cell for cell in model.iter("mxCell")}
+
+    def rectangle(cell):
+        box = cell.find("mxGeometry")
+        x, y, w, h = (float(box.get(key, "0")) for key in ("x", "y", "width", "height"))
+        if cell.get("parent") == "scope_boundary":
+            parent = cells["scope_boundary"].find("mxGeometry")
+            x += float(parent.get("x", "0"))
+            y += float(parent.get("y", "0"))
+        return x, y, w, h
+
+    nodes = [(ident, rectangle(cell)) for ident, cell in cells.items()
+             if ident and ident.startswith("node_")]
+    problems = []
+    for index, (ident, (x, y, w, h)) in enumerate(nodes):
+        if x < 0 or y < 0 or x + w > width or y + h > height:
+            problems.append(f"{ident}: outside draw.io page")
+        for other, (xx, yy, ww, hh) in nodes[index + 1:]:
+            if x < xx + ww and xx < x + w and y < yy + hh and yy < y + h:
+                problems.append(f"{ident} and {other}: node overlap")
+    for ident in ("title", "subtitle"):
+        if ident in cells and "scope_boundary" in cells:
+            x, y, w, h = rectangle(cells[ident])
+            xx, yy, ww, hh = rectangle(cells["scope_boundary"])
+            if x < xx + ww and xx < x + w and y < yy + hh and yy < y + h:
+                problems.append(f"scope_boundary and {ident}: overlap")
+    return problems

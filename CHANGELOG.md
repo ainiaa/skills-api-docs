@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+- 安装器默认为 Codex 和 Claude Code 同时链接两个 Skill，并自动补齐缺失的 Mermaid、PlantUML、draw.io、Archify 引擎；可用 `--host`、重复 `--engine` 或 `--no-engines` 限定范围。显式跳过引擎会保留偏好，Skill 后续不擅自安装；已安装的引擎可复用，卸载 Skill 不删除共享引擎。Python 最低版本提升为 3.11，生成与渲染入口会进行版本检查。
+- Skill 名称统一为 `understand-docs` 与 `understand-arch`；安装器迁移本仓库拥有的 `api-savior-docs`、`understand-api-docs`、`understand-api-arch` 旧链接，并保留无关同名路径。
+- 安装方式改为 Skill 组：根目录 `install.sh` 一次安装、诊断和卸载 `understand-docs` 与 `understand-arch` 两个入口；兼容旧版只安装一个入口的环境，并在写入前检查两个目标路径，避免冲突造成部分安装。`install-arch.sh` 保留为单独管理入口。
+- 修复架构候选覆盖的假通过：识别多行 Spring 映射，候选按源文件区分并要求被映射图元引用全部命中行；畸形候选决定改为结构化校验错误。PlantUML 原生通道补齐 `!includesub` 与 `!include file!编号/ID` 的选中内容核验和本地文件打包。
+- `understand-arch` 增加源码候选清单与严格架构交付：候选事实须逐项映射到总览、细节关系或说明排除原因，清单在校验时重新扫描源码；`deliver` 一次渲染所有细节图并检查 draw.io 卡片几何，旧自报省略清单改标 `declared_only`。候选扫描补识别多行 `@HttpApi*Mapping` 自定义入口。PlantUML 本地 include 纳入证据覆盖和产物，未能清点的外部 include 标为 `partial`。
 - `understand-arch` 强化来源与覆盖校验：IR v2 的 `EXTRACTED` 名称／关系标签须逐字出现在引用源码；原生证据清单 v2 按 Mermaid/PlantUML 行、draw.io 单元和 Archify typed 项逐项检查覆盖，旧清单保持可读但标记覆盖未检查；架构总览可声明省略事实并校验配套细节 IR。
 - C4 容器图与组件图在 draw.io、PlantUML、Mermaid 中显式绘制系统／容器范围；draw.io 总览的跨层线路避开已占用通道，细节图模块边界不再遮住副标题。以 IES 项目补充 Redis 依赖细节图并验证总览覆盖记录。
 - `understand-arch` 新增 draw.io `architecture-landscape` 总览视图：默认把源码支持的入口、模块边界、业务服务、数据设施和外部依赖分层；节点角色使用不同形状与色彩，主／辅助／依赖链路以颜色和线型区分，并以编号关系索引保持长标签可读。单图超出 12 个节点或 12 条关系、标签超长时拒绝交付，要求拆成概览与聚焦视图；以 FA 模块无参考图案例完成真实导出与审图。
@@ -12,7 +17,7 @@
 - draw.io 新增 IR v2 UML 时序图适配：可编辑生命线、按序调用、异步与返回消息，以及自调用；通过官方 draw.io 导出和 FA 真实代码时序图的图片审查。修正了此前“draw.io 不支持时序图”的错误表述；激活条和组合片段仍未实现。
 - `understand-arch` 新增可核对的绘图规范、分型 IR v2 与默认简短请求流程：按 C4、UML 时序、BPMN 可视子集、Crow's Foot ERD 的语义分别校验；不支持的图型/引擎组合明确拒绝，旧 IR v1 保持兼容。
 - 已有 CodeGraph 索引且状态新鲜时，`context` 读取结构化类、路由和通过 `--focus` 指定的调用关系；导出回执区分官方引擎检查与仍需人工完成的视觉审查。C4 draw.io 改用分层布局、中文图例及定向连线；此前 FA 图片虽成功导出，但视觉质量未达用户要求，现由总览密度门槛和实际审图补上验收。
-- 新增独立的 `understand-arch` Skill 与 CLI：无数量截断的源码上下文、逐条源码行证据校验，以及 Mermaid、PlantUML、draw.io、Archify schema-v1 输出；安装与 API 文档 Skill 分离。
+- 新增独立的 `understand-arch` Skill 与 CLI：无数量截断的源码上下文、逐条源码行证据校验，以及 Mermaid、PlantUML、draw.io、Archify schema-v1 输出；调用入口与 API 文档 Skill 分离。
 - 架构 IR 与 API Document IR 独立，保留来源状态 `EXTRACTED`／`INFERRED`／`AMBIGUOUS`；校验失败时不写新图。
 - Archify 接入官方 v2.16.0 `deliver --quality showcase` 验收：生成 HTML 与校验回执，失败时返回非零并清理旧 HTML；修复跨格式节点 ID 冲突、表格布局冲突及畸形 IR 导致的渲染异常。
 - Mermaid、PlantUML、draw.io 接入官方 CLI 验收：`render --format` 按需交付选中的原生格式，只有显式指定 `--svg-for <格式>` 才交付该格式的 SVG；返回 `rendererChecks` 状态，显式要求的引擎缺失或验收失败时返回非零并清理旧成品。CI 固定三套工具版本，使用真实引擎验证生成结果。

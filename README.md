@@ -1,78 +1,12 @@
-# API Savior Docs 与 Understand Arch
+# Understand Docs 与 Understand Arch
 
-本仓库包含两个面向 Codex 的 Skill：`api-savior-docs` 从 Java/Spring MVC、Feign 或 Python/FastAPI 源码生成接口文档；`understand-arch` 从源码证据起草和校验架构 IR，再生成多种架构图。
+面向 Codex 和 Claude Code 的源码文档 Skill 组：`understand-docs` 生成接口文档，`understand-arch` 生成和校验技术图。两个宿主共用同一份仓库与渲染引擎安装。
 
-当前开发版本：[0.3.0-dev](VERSION)。未发布改动见[变更日志](CHANGELOG.md)。
+当前开发版本：[0.3.0-dev.4](VERSION)。改动记录见[变更日志](CHANGELOG.md)。
 
-## Understand Arch
+## 快速开始
 
-`skills/understand-arch/SKILL.md` 是独立入口，API 文档的 `ApiDocument` IR 和生成器保持原有用途。安装新 Skill：
-
-```bash
-bash install-arch.sh
-bash install-arch.sh --doctor
-```
-
-可在 Codex 中直接请求“根据代码生成架构图”，或显式使用 `$understand-arch`。笼统的项目／模块架构图默认生成有源码证据的 draw.io 架构总览，显示入口、模块边界、业务服务、数据设施和外部依赖；明确要求 C4 时使用 C4 图型。Skill 也可选择 UML 时序、BPMN 业务流程或 ERD；参考图和长提示词不是前提。UML 时序图可由 PlantUML、Mermaid 或 draw.io 输出，默认选择 PlantUML。CodeGraph 索引存在且新鲜时，`context` 会读取结构化类、路由及通过 `--focus <方法>` 指定的直接调用，作为源码取证线索。新图使用[分型 IR v2](skills/understand-arch/references/diagram-view-ir.md)，旧[架构 IR v1](skills/understand-arch/references/architecture-ir.md)继续兼容。完整的图型选择、能力边界和验收要求见[绘图规范](docs/DIAGRAM_STANDARD.md)。无模型的 CLI 也可独立使用：
-
-```bash
-python3 scripts/generate_architecture.py context --source /path/to/repo --output /tmp/arch-context.json
-python3 scripts/generate_architecture.py validate --source /path/to/repo --ir /tmp/architecture-ir.json
-python3 scripts/generate_architecture.py render --source /path/to/repo --ir /tmp/architecture-ir.json --output /tmp/architecture --format drawio --export-for drawio:png
-```
-
-官方引擎支持的图型多于分型 IR v2。对未覆盖的图型，Skill 可根据需求和代码证据编写官方原生 `.mmd`、`.puml`、`.drawio` 或 Archify typed `.json`，再用统一命令交给相应官方 CLI 验证并按需导出。已有原生文件也可直接走此通道。例如：
-
-```bash
-python3 scripts/render_native_diagram.py --engine mermaid --input /tmp/classes.mmd --output /tmp/classes --export png
-python3 scripts/render_native_diagram.py --engine archify --input /tmp/process.workflow.json --output /tmp/process --export png
-python3 scripts/render_native_diagram.py --engine mermaid --input /tmp/classes.mmd --output /tmp/classes \
-  --source-repo /path/to/repo --evidence /tmp/diagram.evidence.json --export png
-```
-
-Archify 原生通道接受官方 `architecture`、`workflow`、`sequence`、`dataflow`、`lifecycle` 五种模式。源码驱动的原生图须附[证据清单](skills/understand-arch/references/native-diagrams.md)：v2 清单逐项覆盖图中的材料并关联当前源码行；回执会报告 `sourceEvidence: anchors_validated`、`claimCoverage: complete` 和 `claimSemantics: not_proven`。没有清单则报告 `sourceEvidence: not_checked`。`officialCheck: pass` 只表示原生文件经官方引擎验收，图的业务解释和视觉质量仍要审阅。各引擎官方目录与当前自动生成缺口见[能力审计](docs/RENDERER_CAPABILITY_AUDIT.md)。
-
-`context` 不设模块、类或文件数量上限，列出所有源码文件及扫描到的声明、路由、配置键和表名线索；声明扫描复用现有 tree-sitter 解析能力（未安装可选语法包时退回逐行候选扫描）。已有 `.ua/knowledge-graph.json` 与 `domain-graph.json` 时也会提供给 agent，并报告提交版本不一致。源码行校验能拦截不存在的引用；新鲜图谱或现有 CodeGraph 索引还会核对关键类的位置。业务能力和关系仍是带证据的推断，需审阅 `INFERRED`／`AMBIGUOUS` 项。`render` 用可重复的 `--format` 选择引擎，默认只交付原生文件与已验证 IR；`--export-for 引擎:格式` 按需求追加实际渲染的文件。选中 Archify 且 CLI 可用时会交付 HTML。`rendererChecks` 记录所选 Mermaid、PlantUML、draw.io 引擎的语法与导出验收状态，不能替代实际图片审查；新 IR v2 的回执标记 `visualReview: required`。Archify 使用 `archifyRendered` 和 `archifyReceipt`。任一请求的导出失败时命令返回非零，并清理对应旧成品。
-
-### Mermaid、PlantUML、draw.io 官方验收
-
-按需要选择一种或多种格式；要强制所选格式经过对应引擎验收，传入官方 CLI 路径：
-
-```bash
-python3 scripts/generate_architecture.py render \
-  --source /path/to/repo --ir /tmp/architecture-ir.json --output /tmp/architecture \
-  --format mermaid --format plantuml --format drawio \
-  --mermaid-cli /path/to/mmdc --plantuml-cli /path/to/plantuml \
-  --drawio-cli /path/to/drawio
-```
-
-默认交付物分别是 `.mmd`、`.puml`、`.drawio`。Mermaid 和 draw.io 会在临时目录渲染以验证文件，PlantUML 使用 `-checkonly`；临时文件不会交付。需要静态文件时追加并重复 `--export-for`，例如 `--export-for mermaid:png --export-for drawio:jpg --export-for plantuml:pdf`。旧参数 `--svg-for mermaid` 仍可用，等价于 `--export-for mermaid:svg`。请求导出时必须能运行对应官方 CLI；产物经过格式签名检查后才列入 `artifacts`，失败时返回非零并清理旧文件。CI 固定 Mermaid CLI `12.0.0`、PlantUML `1.2026.8`、draw.io Desktop `29.3.6` 并执行真实引擎验收。引擎验收证明文件可渲染，业务解释仍需按 IR 证据审阅。
-
-| 引擎 | 原生交付 | 可请求的静态导出 |
-|---|---|---|
-| Mermaid | `.mmd` | SVG、PNG、PDF |
-| PlantUML | `.puml` | SVG、PNG、PDF |
-| draw.io | `.drawio` | SVG、PNG、JPG、PDF |
-| Archify | `.archify.json`、HTML | SVG、PNG、JPG、WebP、WebM、PDF |
-
-Archify 官方 CLI 先交付并验收 HTML；请求图片或 WebM 时，本脚本用 Chrome/Chromium 调用该 HTML 查看器的官方导出菜单，PDF 调用同一浏览器的打印功能。请求 WebM 会为该次 Archify 规格启用 `trace` 动画。需有 Node.js 和 Chrome/Chromium；浏览器不支持 WebM 录制时会明确失败。成功文件会列入 `artifacts`。不支持的引擎与格式组合会在写文件前拒绝。
-
-### Archify 官方验收
-
-需要声称 Archify 成品通过官方验收时，传入固定版本 CLI 的路径：
-
-```bash
-python3 scripts/generate_architecture.py render \
-  --source /path/to/repo --ir /tmp/architecture-ir.json --output /tmp/architecture \
-  --format archify \
-  --archify-cli /path/to/archify/archify/bin/archify.mjs
-```
-
-此模式要求 CLI 可用，并调用官方 `deliver --quality showcase --json`。成功结果中的 `archifyReceipt` 包含官方校验和成品检查回执；失败返回非零状态。附加 `--export-for archify:png --export-for archify:pdf` 等参数即可交付查看器导出的静态文件。CI 的 [Archify 验收工作流](.github/workflows/archify-acceptance.yml)固定官方 [v2.16.0](https://github.com/tt-a1i/archify/releases/tag/v2.16.0) 对应提交 `c826e6c3a7abad19c0f3cd1ca57207d54b1ad8de`，用真实 CLI 测试含多个业务域、两张表、外部系统和关系的适配器输出。官方 `deliver` 包含验证、渲染及最终成品检查；它不证明业务域解释正确，`INFERRED`／`AMBIGUOUS` 仍需人工审阅。
-
-## 3 步快速开始
-
-1. 克隆仓库，并安装到 Codex：
+1. 克隆仓库，一次安装两个 Skill 与缺失的绘图引擎：
 
    ```bash
    git clone https://github.com/ainiaa/skills-api-docs.git
@@ -80,100 +14,162 @@ python3 scripts/generate_architecture.py render \
    bash install.sh
    ```
 
-2. 运行 `bash install.sh --doctor` 确认安装，然后重启或刷新 Codex 的 Skill 发现。
+2. 检查 Skill 入口和四个引擎，再重启或刷新 Codex／Claude Code 的 Skill 发现：
 
-3. 显式调用 Skill：
+   ```bash
+   bash install.sh --doctor
+   ```
+
+3. 直接描述目标，或显式点名 Skill：
 
    ```text
-   使用 $api-savior-docs 为这个 Spring Controller 生成 API 文档，包含 requestBody 和枚举说明。
+   Codex：使用 $understand-docs 为这个 Spring Controller 生成 API 文档。
+   Codex：使用 $understand-arch 根据这个项目的代码生成 draw.io 架构图，并导出 PNG。
+   Claude Code：/understand-docs 为这个 Spring Controller 生成 API 文档。
+   Claude Code：/understand-arch 根据这个项目的代码生成 draw.io 架构图，并导出 PNG。
    ```
+
+生成文档和图时，只需向当前宿主提出需求；内部 Python 脚本由 Skill 按需调用，普通使用者不必运行它们。
+
+### 选哪个 Skill
+
+| 需求 | Skill | 主要交付物 |
+|---|---|---|
+| 从 Spring MVC、Feign 或 FastAPI 源码生成接口文档 | [`understand-docs`](SKILL.md) | Markdown、Postman Collection、cURL 示例 |
+| 根据仓库证据绘制架构、流程、时序、ERD 等技术图 | [`understand-arch`](skills/understand-arch/SKILL.md) | 可编辑图源、按需导出的图片或 PDF、验证回执 |
 
 ## 为什么会有它
 
-API Savior 插件在 IDEA 中读取映射注解与 DTO 来生成接口文档。本 Skill 把这类文档生成能力带到 Codex 和命令行中：从源码解析入参、出参、字段说明与枚举，生成 Markdown、Postman 和 cURL 三种结果。
+Understand Docs 将 API Savior IDEA 插件的 RESTful 文档风格带到 Codex 和命令行，从真实路由、DTO 和枚举声明生成文档。Understand Arch 让“根据代码画架构图”成为可检查的工作：先确定图型和范围，再关联源码证据、生成图源、调用实际渲染引擎，并检查成品。
+
+两个 Skill 都会保留源码无法确定的部分，不把推断伪装成已验证事实。图源通过引擎验收，也仍需审阅业务解释和视觉效果。
 
 ## 能力与边界
 
-| 输入 | 当前支持 |
+| 能力 | 当前实现 |
 |---|---|
-| Java | Spring MVC Controller、Feign Client、映射注解、DTO 字段与泛型、源码可解析的枚举 |
-| Python | FastAPI 路由、`APIRouter`、参数绑定、应用／路由／挂载依赖中的请求参数与响应类型 |
-| 输出 | Markdown、Postman Collection、cURL 示例 |
+| 接口文档输入 | Java Spring MVC Controller、Feign Client；Python FastAPI 路由 |
+| 接口文档内容 | 请求和响应字段、JSON 示例、源码可解析的枚举；未解析类型会明确标出 |
+| 架构图生成 | 源码上下文、候选清单、分型 IR v2、覆盖决策、验证及交付；项目／模块总览默认使用 draw.io |
+| 其他图型 | C4、UML 时序、BPMN 可视子集、ERD 等已实现 profile；其余官方图型可编写引擎原生文件并验收 |
+| 可用渲染引擎 | Mermaid、PlantUML、draw.io、Archify；按需求选择引擎和导出格式 |
 
-Java 文档包含 JSON 请求体示例、分层字段表，以及字段内和独立章节中的枚举说明。对于无法从源码确定的类型或枚举值，生成器保留未解析状态，不猜测真实请求值。
+源码行校验能证明引用位置存在，不能单独证明业务关系、运行时行为或图面质量。[绘图规范](docs/DIAGRAM_STANDARD.md)说明图型选择和验收要求；[能力审计](docs/RENDERER_CAPABILITY_AUDIT.md)区分官方引擎能力、本项目的自动生成能力与原生文件通道。
 
-解析基于提供的源码，不加载 IDEA 项目模型。JAR DTO 按完整类名解析，并展开可用的父类字段；同名类缺少明确导入时给出歧义提示。二进制 JAR 不能提供完整的枚举元数据；未解析的 DTO 和非 JSON 请求体不会生成猜测的 JSON 内容。如果需要与某个已安装插件版本逐字一致，应对同一接口比较两边的实际输出。IDEA 中的导航、UI 操作和代码生成不在本 Skill 的范围内。
+### 四个渲染引擎分别能画什么
+
+下表将**官方引擎的图型范围**、**本项目有确定性转换器的 IR v2 图型**和**可编写原生文件的图型**分开。官方目录会更新；原生图只有在当前安装的官方 CLI 实际验收成功后，才能算本机可交付。`architecture-landscape` 是本项目的架构总览约定，不宣称符合 C4 标准。
+
+| 引擎 | 官方原生图型举例 | 本项目 IR v2 自动转换 | 其他图型的交付方式 |
+|---|---|---|---|
+| [Mermaid](https://mermaid.js.org/intro/syntax-reference.html) | 流程／泳道、时序、类、状态、ER、甘特、旅程、思维导图、C4 等 | C4 上下文／容器／组件、基础 UML 时序、ERD | 编写 `.mmd`，经 Mermaid CLI 验证和导出；C4 语法在 Mermaid 官方仍标为实验性 |
+| [PlantUML](https://plantuml.com/) | UML 时序、用例、类、活动、组件、部署、状态、Timing；还有 ER、甘特、思维导图、JSON／YAML 等 | C4 上下文／容器／组件、基础 UML 时序、ERD | 编写 `.puml`，经 PlantUML CLI 验证和导出；活动图中的泳道等采用官方原生语法 |
+| [draw.io](https://www.drawio.com/docs/diagram-types/) | C4、UML 多种结构／行为图、流程／泳道、BPMN、ER、云与网络架构等；形状和模板可自由组合，没有封闭的图型全集 | 架构总览、C4 上下文／容器／组件、基础 UML 时序、BPMN **可视子集**、ERD | 编写可编辑 `.drawio`，经 draw.io Desktop CLI 验证和导出；BPMN 可视图不等于可执行 BPMN XML |
+| [Archify](https://github.com/tt-a1i/archify/blob/c826e6c3a7abad19c0f3cd1ca57207d54b1ad8de/archify/schemas/README.md) | 固定版本的五种 typed 图：architecture、workflow、sequence、dataflow、lifecycle | 暂无 IR v2 转换器；旧 IR v1 可转换为 architecture | 编写五种官方 typed JSON，经 Archify CLI 交付为交互 HTML，再按需导出 |
+
+按官网目录细分，Mermaid 还包括用户旅程、饼图、象限、需求、用例、Git 图、时间线、ZenUML、Sankey、XY、Block、Packet、看板、Architecture、Radar、Event Modeling、Treemap、Venn、Ishikawa、Wardley、Cynefin、TreeView 等；完整且可能变化的清单以[官方语法目录](https://mermaid.js.org/intro/syntax-reference.html)为准。PlantUML 的 UML 图还包括对象图，其非 UML 图包括 EBNF、正则、网络图、Salt 界面图、ArchiMate、SDL、Ditaa、Chronology、WBS、IE／Chen ER 和图表等，详见[官方图型目录](https://plantuml.com/)。draw.io 是自由形状编辑器，除了上表还可绘制思维导图、甘特、看板、组织图、机架图等；其[官方示例目录](https://www.drawio.com/docs/diagram-types/)是示例集合，并非受限的类型清单。Archify 固定版本只有表中五种 schema 图型。
+
+因此，“支持某种图”有两种用法：上表 IR v2 列可从本项目分型 IR 确定性转换；其他官方图型由 Skill 根据需求和证据编写原生图源，再用官方引擎验收。后者不是每种图都有独立的自动转换器。[完整差异与边界](docs/RENDERER_CAPABILITY_AUDIT.md)列出更多图型。
+
+| 引擎 | 保留的图源／展示文件 | 本项目可请求的导出格式 |
+|---|---|---|
+| Mermaid | `.mmd` | SVG、PNG、PDF |
+| PlantUML | `.puml` | SVG、PNG、PDF |
+| draw.io | 可编辑 `.drawio` | SVG、PNG、JPG、PDF |
+| Archify | typed JSON、交互 HTML | SVG、PNG、JPG、WebP、WebM、PDF |
+
+HTML 是 Archify 的交互展示文件；其余三种引擎的 HTML 不是本项目当前的导出选项。PNG、JPG、PDF 等格式由所选引擎分别导出，不会先统一转成 SVG 再冒充目标格式。不支持的引擎与格式组合会报错。
 
 ## 安装与升级
 
-仓库根目录就是 Skill 目录，入口为 [SKILL.md](SKILL.md)。[install.sh](install.sh) 将当前仓库软链接到 `${CODEX_HOME:-$HOME/.codex}/skills/api-savior-docs`，重复安装安全，不覆盖已有目录、文件或其他软链接。
+[install.sh](install.sh) 默认把两个 Skill 软链接到 Codex 的 `~/.codex/skills` 和 Claude Code 的 `~/.claude/skills`，并自动安装当前缺失的四个绘图引擎。两边共用本仓库文件，更新一次即可同步更新。安装前会检查所有目标路径，保留无关目录和软链接；本仓库拥有的旧名称链接会迁移。`--uninstall` 只移除本仓库拥有的 Skill 链接，**不会删除**可被其他项目复用的引擎。[Claude Code 官方文档](https://code.claude.com/docs/en/skills#choose-where-skills-load)确认个人 Skill 目录与软链接可用；这里支持的是本地 Claude Code，会话之外的 Claude 云端环境不读取本机目录。
 
-更新仓库后运行 `bash install.sh --doctor` 检查软链接，再重启或刷新 Codex 的 Skill 发现。`bash install.sh --uninstall` 只移除指向当前仓库的软链接。不要把生成的 API 文档写入源码目录，除非你明确要将其纳入项目。
-
-## 调用当前 Skill
-
-在 Codex 中可显式使用 `$api-savior-docs`，也可直接运行 CLI。运行脚本需要 Python 3.9 或更新版本；Java 源码解析还需要 JDK 11 或更新版本。
-
-```bash
-python3 scripts/generate_api_docs.py \
-  --source /path/to/project/src/main/java \
-  --output /tmp/api-savior-docs
-```
-
-只生成一个 Java 接口的 Markdown 文档：
-
-```bash
-python3 scripts/generate_api_docs.py \
-  --source /path/to/project/src/main/java \
-  --controller /path/to/project/src/main/java/example/OrderController.java \
-  --endpoint createOrder \
-  --output-file /tmp/create-order.md
-```
-
-同名重载方法或一个方法对应多个路径/HTTP 方法时，使用 `--endpoint createOrder@POST:/orders` 精确选择；只写方法名会报歧义并列出可选值。仓库含 `.codegraph/` 索引时 `--controller` 可省略，生成器会自动定位。
-
-FastAPI 源码使用 `--language python`。多个源码根目录可重复传入 `--source`；Java 的二进制 DTO 依赖可重复传入 `--classpath`。完整参数见 `python3 scripts/generate_api_docs.py --help`。`curl.sh` 在未指定 `--base-url` 时以 `http://localhost:8080`（Java）或 `http://localhost:8000`（Python）作为示例地址，发送前请替换为实际服务地址。
-
-## 可选：代码发现引擎（codegraph / tree-sitter）
-
-生成器可以自动利用代码发现引擎完成三件事，无需改变调用方式（Java 与 Python 均支持）：
-
-- `--endpoint` 不再需要先传 `--controller`：按接口方法名定位声明文件。Java 会据此缩小扫描范围；Python 的模块名由传入源码根决定，为保证输出一致仅输出定位提示、不收窄；
-- 报出未解析 DTO 类型时，自动反查类型定义文件、推导其源码根并重跑（最多 2 轮，stderr 以 `[引擎名]` 前缀说明补了什么；Python 包根按 `__init__.py` 链推导）；
-- `--changed <改动文件>`：只重新生成受改动影响的接口段落，覆盖 Controller/路由源文件本身与 DTO 的传递引用（例如接口返回 `PageData<Order>`，改 `Order.java` 同样命中）。
-
-引擎按可用性自动选择，互为备选：
-
-1. **codegraph**（推荐）：仓库含 `.codegraph/` 索引且安装了 [codegraph CLI](https://www.npmjs.com/package/@colbymchenry/codegraph)，先增量 `sync` 再查询，覆盖整个项目；`--changed` 的批量定位在引擎内并行执行；
-2. **tree-sitter 回退**：安装可选包 `pip3 install tree-sitter tree-sitter-python tree-sitter-java tree-sitter-typescript tree-sitter-go tree-sitter-php` 后生效。符号索引覆盖 `.java` / `.py` / `.ts` / `.tsx` / `.go` / `.php`，主查询逐字 vendor 自各语法上游仓库的 tags.scm；项目边界取最近的 `.git` 祖先目录；按文件的 mtime+size 缓存放系统临时目录，查询文本变更自动失效。两者都不可用时不启用任何引擎。
-
-发现引擎只回答"文件与符号在哪"。字段、wire 名、枚举等语义仍由源码解析产生——文档生成适配器目前为 Java（Spring/Feign）与 Python（FastAPI），新语言接入引擎后即可被定位，待对应框架适配器出现后即可生成文档。`--no-codegraph` 显式关闭整个发现层。
-
-## 生成结果
-
-传入 `--output` 时，会在指定目录生成：
-
-| 文件 | 内容 |
+| 安装命令 | 行为 |
 |---|---|
-| `api-docs.md` | 接口说明、入参和出参字段、JSON 示例、枚举表 |
-| `postman-collection.json` | 可导入 Postman 的请求集合 |
-| `curl.sh` | 对应的 cURL 请求示例 |
+| `bash install.sh` | Codex、Claude Code 均安装两个 Skill；补齐全部缺失引擎 |
+| `bash install.sh --engine drawio` | 两个宿主安装 Skill；只补齐 draw.io。`--engine` 可重复指定 |
+| `bash install.sh --no-engines` | 只安装 Skill，并记录“不要自动安装引擎”的选择 |
+| `bash install.sh --host claude --engine mermaid` | 只为 Claude Code 安装 Skill，只补齐 Mermaid |
+| `bash install.sh --doctor` | 检查两个宿主的 Skill 链接和四个引擎；可配合 `--host`、`--engine`、`--no-engines` 缩小检查范围 |
 
-示例值可能只是字段含义占位符。实际发送请求前，应替换为目标环境接受的值。
+`--host codex` 只管理 Codex，`--host claude` 只管理 Claude Code，默认 `--host both`。使用 `--no-engines` 后，后续画图时 Skill 也不会擅自补装；再次显式运行带 `--engine` 的安装命令可解除这一选择。已装好的引擎会复用，无需每次重新安装。
+
+### 渲染引擎要另外安装吗？
+
+**通常不需要手动安装。**默认安装流程会检测并补齐四个引擎；也可用 `--engine` 只装实际需要的引擎。如果生成图时才发现缺少所选引擎，Skill 会在未选择 `--no-engines` 的前提下自动补装并重试。生成接口文档不需要绘图引擎。安装程序会使用本地已有命令，缺失时在用户目录安装固定版本或调用系统包管理器；无法完成时明确报错，不会假称导出成功。
+
+| 选择的引擎 | 本机需要的程序 | 安装与运行条件 |
+|---|---|---|
+| Mermaid | `mmdc` | 自动准备 Node.js 22.13+，并安装 [Mermaid CLI](https://github.com/mermaid-js/mermaid-cli#installation) 12.0.0 |
+| PlantUML | `plantuml` | 自动准备 Java 并下载校验 [PlantUML](https://plantuml.com/download) 1.2026.8 |
+| draw.io | `drawio` | macOS 自动下载并校验 [draw.io Desktop](https://github.com/jgraph/drawio-desktop/releases) 29.3.6 通用版 DMG，安装在用户目录；x86-64 的 apt 系 Linux 使用校验过的 29.3.6 安装包，并准备无桌面环境导出所需的 Xvfb |
+| Archify | `archify` | 自动准备 Node.js、Chrome/Chromium，并安装校验 [Archify](https://github.com/tt-a1i/archify/releases/tag/v2.16.0) 2.16.0 |
+
+安装与内部 CLI 要求 **Python 3.11 或更新版本**；解析 Java 源码还需要 JDK 11 或更新版本。macOS 自动安装 Chrome／Java 需要 Homebrew；Linux 的系统包安装需要 apt 与相应权限。系统缺少这些条件、下载校验失败或格式不可用时会明确报错，不会悄悄换用其他引擎或格式。手动指定 CLI 路径的开发者可查看[两个 Skill 的入口说明](#文档)。
+
+## 使用 Understand Docs
+
+打开目标项目，在 Codex 或 Claude Code 中描述要生成的文档即可。例如：
+
+```text
+使用 $understand-docs 为当前项目生成完整 API 文档，包含请求、响应、枚举说明、Postman 集合和 cURL 示例。
+使用 $understand-docs 只生成 OrderController 的 createOrder 接口文档。
+使用 $understand-docs 为这个 FastAPI 项目生成接口文档。
+```
+
+Skill 会定位源码并运行生成器；完整交付物包括 Markdown、Postman Collection 和 cURL 示例。若一个方法对应多个路由，它会明确选择具体 HTTP 方法与路径；若 DTO 来自另一个源码根或 JAR，则需要能访问该依赖。无法从源码确定的类型或示例值会标出，不会猜造真实请求。已有 CodeGraph 或 tree-sitter 可辅助定位，字段与枚举仍由源码解析。手动 CLI 参数保留在 [Understand Docs Skill](SKILL.md) 中，普通使用无需填写源码路径和命令参数。
+
+## 使用 Understand Arch
+
+在 Codex 或 Claude Code 中说“根据代码生成架构图”即可开始。Skill 会按[绘图规范](docs/DIAGRAM_STANDARD.md)确定视图和引擎；明确要求 C4、流程图、泳道图、时序图或其他图型时，会采用对应记法。参考图和长提示词不是必需输入。
+
+可以直接说目标，也可以显式触发 Skill 并指定引擎、图型、导出格式。下列示例使用 Codex 的 `$understand-arch`；在 Claude Code 中将其写作 `/understand-arch`：
+
+```text
+根据这个项目的代码生成架构图，导出 PNG。
+使用 $understand-arch 为 FA 模块画 draw.io 架构总览，并给复杂链路配细节图，导出 PNG。
+使用 $understand-arch 根据订单调用链画 PlantUML 时序图，保留 .puml，导出 PDF。
+使用 $understand-arch 根据状态转换画 Mermaid 状态图，保留 .mmd，导出 SVG。
+使用 $understand-arch 根据审批流程画 Archify workflow，保留 JSON 和交互 HTML，导出 WebP。
+```
+
+未指定引擎时，Skill 先按问题选图型，再选能表达该图型的引擎；项目／模块架构总览默认用 draw.io。明确指定引擎或导出格式时按要求执行；不支持的组合会报告错误。以上 Mermaid 状态图和 Archify workflow 走**官方原生图源通道**，不是 IR v2 转换。
+
+Skill 会读取源码和可用的 CodeGraph 信息，选择合适的图型，生成可编辑图源，调用已安装的官方引擎导出指定格式，再核对源码证据与实际成图。已实现的图型使用[分型 IR v2](skills/understand-arch/references/diagram-view-ir.md)；其他官方图型使用引擎原生文件和[证据清单](skills/understand-arch/references/native-diagrams.md)。用户无需手写 IR、JSON 或执行 Python 命令。需要绕过 Codex 手动调用脚本时，参阅 [Understand Arch Skill](skills/understand-arch/SKILL.md) 中的命令行流程。
+
+### 引擎如何参与生成
+
+1. **发现与取证**：Skill 扫描仓库，并在已有且新鲜的 CodeGraph 索引可用时，借助它定位类、路由和调用关系；架构总览还会逐项核对候选模块与依赖。引擎本身不理解项目代码。
+2. **生成图源**：已实现的图型由本项目将分型 IR 转换为 `.mmd`、`.puml` 或 `.drawio`；旧 IR v1 可转换为 Archify architecture JSON。其余图型由 Skill 编写对应引擎的原生语法或 typed JSON。
+3. **调用官方引擎**：Mermaid、PlantUML、draw.io 解析各自图源并导出所需格式；Archify 验证 typed JSON，先生成交互 HTML，再由官方查看器导出图片和 WebM，或由浏览器打印 PDF。Skill 不把一个引擎的图偷偷交给另一个引擎处理。
+4. **核查与交付**：源码图核对引用位置；架构总览连同声明的细节图一起交付。引擎通过只证明图源可解析、文件可导出；业务解释和图面效果仍需审阅。
+
+证据清单的 `claimCoverage: complete` 表示图中材料已逐项关联源码，`claimSemantics: not_proven` 则表示业务解释仍需复核。旧[架构 IR v1](skills/understand-arch/references/architecture-ir.md)继续兼容。
 
 ## 文档
 
-- [Skill 使用规则](SKILL.md)
-- [API Document IR](references/api-document-ir.md)：语言适配器与输出渲染器之间的数据结构
+- [Understand Docs Skill](SKILL.md) · [API Document IR](references/api-document-ir.md)
+- [Understand Arch Skill](skills/understand-arch/SKILL.md) · [图型与证据规范](docs/DIAGRAM_STANDARD.md)
+- [渲染引擎能力审计](docs/RENDERER_CAPABILITY_AUDIT.md) · [draw.io 模板取舍](docs/ARCHITECTURE_TEMPLATE_RESEARCH.md)
+- [变更日志](CHANGELOG.md)
 
-## 开发
+## 开发与验证
 
 ```bash
-cd scripts
-python3 -m unittest test_generate_api_docs test_discovery test_install test_architecture test_install_arch
+python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
-测试覆盖 Java 与 Python 解析、文档生成，以及发现引擎的定位、自愈与增量再生（通过注入的 FakeEngine，无需安装 codegraph）。修改版本或用户可见行为时，同步更新 `VERSION` 与 [CHANGELOG.md](CHANGELOG.md)。修改 Skill 入口后，还应运行 Codex `skill-creator` 的 `quick_validate.py` 校验元数据和目录结构。
+修改版本或用户可见行为时，同步更新 `VERSION` 和 `CHANGELOG.md`。修改 Skill 入口时，使用 Codex `skill-creator` 的 `quick_validate.py` 校验元数据与目录结构。真实引擎的可用性及图像质量需要对应 CLI 和成品检查；单元测试不替代这两项验收。
+
+## 参考与鸣谢
+
+感谢以下项目和实践。列出它们是说明能力来源与启发，并不表示这些项目为本仓库的生成结果背书。
+
+- **API Savior IDEA 插件**：启发了接口文档的 RESTful 版式与字段呈现方式；本仓库实现的是独立的源码解析和命令行生成流程。
+- [Mermaid](https://mermaid.js.org/)、[PlantUML](https://plantuml.com/) 与 [draw.io](https://www.drawio.com/)：提供图形语法、编辑器与实际渲染工具。
+- [Archify](https://github.com/tt-a1i/archify)：提供 typed 图型及官方交付与导出能力。
+- [CodeGraph](https://www.npmjs.com/package/@colbymchenry/codegraph) 与 [tree-sitter](https://tree-sitter.github.io/tree-sitter/)：提供可选的代码定位能力。
+- [Converge Suite](https://github.com/ainiaa/skills-convergent-delivery)：本 README 的信息组织方式参考了该项目。
 
 ## 许可与反馈
 

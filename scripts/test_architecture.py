@@ -71,6 +71,14 @@ class ArchitectureTests(unittest.TestCase):
         self.assertTrue(any(item["value"] == "/orders" for item in context["routes"]))
         self.assertTrue(any(item["key"] == "orders.remote.url" for item in context["configKeys"]))
 
+    def test_context_recognizes_multiline_mapping_with_path_argument(self):
+        (self.root / "src" / "OrderController.java").write_text(
+            '@RestController\nclass OrderController {\n  @GetMapping(\n'
+            '    path = "/orders"\n  )\n  void list() {}\n}\n', encoding="utf-8")
+        context = build_context(self.root)
+        self.assertIn({"value": "/orders", "path": "src/OrderController.java", "line": 3},
+                      context["routes"])
+
     def test_context_warns_when_source_differs_from_graph_commit(self):
         subprocess.run(["git", "init", "-q", str(self.root)], check=True)
         subprocess.run(["git", "-C", str(self.root), "add", "src/OrderController.java"], check=True)

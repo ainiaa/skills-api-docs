@@ -113,6 +113,144 @@ class NativeDiagramTest(unittest.TestCase):
                                                "mermaid", None)
         self.assertEqual(problems, [])
 
+    def test_v2_manifest_inventories_local_plantuml_includes(self):
+        from render_native_diagram import _validate_source_manifest
+        source, source_root, manifest = self.source_backed()
+        source = self.root / "view.puml"
+        source.write_text("@startuml\n!include links.puml\nclass Asset\n@enduml\n", encoding="utf-8")
+        (self.root / "links.puml").write_text("Asset --> Ledger\n", encoding="utf-8")
+        payload = {"version": 2, "engine": "plantuml", "diagramType": "class",
+                   "claims": [{"statement": "class Asset", "artifactRef": "line:3",
+                               "artifactQuote": "class Asset", "provenance": "EXTRACTED",
+                               "evidence": [{"path": "Asset.java", "line": 1,
+                                             "quote": "class Asset"}]}]}
+        manifest.write_text(json.dumps(payload), encoding="utf-8")
+        _, problems = _validate_source_manifest(manifest, source_root.resolve(), source,
+                                               "plantuml", None)
+        self.assertTrue(any("include:links.puml:line:1" in problem for problem in problems), problems)
+        payload["claims"].append({"statement": "Asset links to Ledger",
+                                  "artifactRef": "include:links.puml:line:1",
+                                  "artifactQuote": "Asset --> Ledger", "provenance": "INFERRED",
+                                  "evidence": [{"path": "Asset.java", "line": 1,
+                                                "quote": "class Asset"}]})
+        manifest.write_text(json.dumps(payload), encoding="utf-8")
+        _, problems = _validate_source_manifest(manifest, source_root.resolve(), source,
+                                               "plantuml", None)
+        self.assertEqual(problems, [])
+
+    def test_plantuml_external_include_prevents_complete_claim_coverage(self):
+        from render_native_diagram import _untracked_includes
+        source = self.root / "view.puml"
+        source.write_text("@startuml\n!include <C4/C4_Container>\nclass Asset\n@enduml\n",
+                          encoding="utf-8")
+        self.assertEqual(_untracked_includes(source), ["line:2"])
+
+    def test_plantuml_block_include_inventories_only_selected_block(self):
+        from render_native_diagram import _plantuml_refs
+        source = self.root / "view.puml"
+        source.write_text("@startuml\n!include blocks.puml!0\n@enduml\n", encoding="utf-8")
+        (self.root / "blocks.puml").write_text(
+            "@startuml\nclass Asset\n@enduml\n@startuml\nclass Unselected\n@enduml\n",
+            encoding="utf-8")
+        refs, untracked, included = _plantuml_refs(source)
+        self.assertEqual(refs, {"include:blocks.puml:line:2": "class Asset"})
+        self.assertEqual(untracked, [])
+        self.assertEqual(included, [(self.root / "blocks.puml").resolve()])
+
+    @unittest.skipUnless(shutil.which("plantuml"), "official PlantUML CLI is unavailable")
+    def test_official_plantuml_selected_block_is_packaged(self):
+        _, source_root, manifest = self.source_backed()
+        source = self.root / "view.puml"
+        source.write_text("@startuml\n!include blocks.puml!ASSET\n@enduml\n", encoding="utf-8")
+        (self.root / "blocks.puml").write_text(
+            "@startuml(id=ASSET)\nclass Asset\n@enduml\n"
+            "@startuml(id=OTHER)\nclass Unselected\n@enduml\n", encoding="utf-8")
+        manifest.write_text(json.dumps({"version": 2, "engine": "plantuml", "diagramType": "class",
+                                        "claims": [{"statement": "class Asset",
+                                                    "artifactRef": "include:blocks.puml:line:2",
+                                                    "artifactQuote": "class Asset",
+                                                    "provenance": "EXTRACTED",
+                                                    "evidence": [{"path": "Asset.java", "line": 1,
+                                                                  "quote": "class Asset"}]}]}), encoding="utf-8")
+        result = self.render("plantuml", source, "--source-repo", str(source_root),
+                             "--evidence", str(manifest))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["claimCoverage"], "complete")
+        self.assertTrue((self.output / "blocks.puml").is_file())
+
+    @unittest.skipUnless(shutil.which("plantuml"), "official PlantUML CLI is unavailable")
+    def test_plantuml_includesub_is_packaged_and_claimed(self):
+        _, source_root, manifest = self.source_backed()
+        source = self.root / "view.puml"
+        source.write_text("@startuml\n!includesub part.puml!BASIC\n@enduml\n", encoding="utf-8")
+        (self.root / "part.puml").write_text(
+            "@startuml\n!startsub BASIC\nclass Asset\n!endsub\n@enduml\n", encoding="utf-8")
+        manifest.write_text(json.dumps({"version": 2, "engine": "plantuml", "diagramType": "class",
+                                        "claims": [{"statement": "Asset view",
+                                                    "artifactRef": "line:2",
+                                                    "artifactQuote": "!includesub part.puml!BASIC",
+                                                    "provenance": "INFERRED",
+                                                    "evidence": [{"path": "Asset.java", "line": 1,
+                                                                  "quote": "class Asset"}]}]}), encoding="utf-8")
+        incomplete = self.render("plantuml", source, "--source-repo", str(source_root),
+                                 "--evidence", str(manifest))
+        self.assertNotEqual(incomplete.returncode, 0)
+        self.assertIn("include:part.puml:line:3", incomplete.stdout + incomplete.stderr)
+        manifest.write_text(json.dumps({"version": 2, "engine": "plantuml", "diagramType": "class",
+                                        "claims": [{"statement": "class Asset",
+                                                    "artifactRef": "include:part.puml:line:3",
+                                                    "artifactQuote": "class Asset",
+                                                    "provenance": "EXTRACTED",
+                                                    "evidence": [{"path": "Asset.java", "line": 1,
+                                                                  "quote": "class Asset"}]}]}), encoding="utf-8")
+        result = self.render("plantuml", source, "--source-repo", str(source_root),
+                             "--evidence", str(manifest))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["claimCoverage"], "complete")
+        self.assertTrue((self.output / "part.puml").is_file())
+
+    @unittest.skipUnless(shutil.which("plantuml"), "official PlantUML CLI is unavailable")
+    def test_official_plantuml_local_include_is_packaged(self):
+        _, source_root, manifest = self.source_backed()
+        source = self.root / "view.puml"
+        source.write_text("@startuml\n!include links.puml\nclass Asset\n@enduml\n", encoding="utf-8")
+        (self.root / "links.puml").write_text("Asset --> Ledger\n", encoding="utf-8")
+        manifest.write_text(json.dumps({"version": 2, "engine": "plantuml", "diagramType": "class",
+                                        "claims": [
+                                            {"statement": "class Asset", "artifactRef": "line:3",
+                                             "artifactQuote": "class Asset", "provenance": "EXTRACTED",
+                                             "evidence": [{"path": "Asset.java", "line": 1,
+                                                           "quote": "class Asset"}]},
+                                            {"statement": "Asset links to Ledger",
+                                             "artifactRef": "include:links.puml:line:1",
+                                             "artifactQuote": "Asset --> Ledger", "provenance": "INFERRED",
+                                             "evidence": [{"path": "Asset.java", "line": 1,
+                                                           "quote": "class Asset"}]}]}), encoding="utf-8")
+        result = self.render("plantuml", source, "--source-repo", str(source_root),
+                             "--evidence", str(manifest))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["claimCoverage"], "complete")
+        self.assertTrue((self.output / "links.puml").is_file())
+
+    @unittest.skipUnless(shutil.which("plantuml"), "official PlantUML CLI is unavailable")
+    def test_official_plantuml_library_include_reports_partial_coverage(self):
+        _, source_root, manifest = self.source_backed()
+        source = self.root / "view.puml"
+        source.write_text('@startuml\n!include <C4/C4_Container>\n'
+                          'Container(asset, "Asset", "Java", "Stores data")\n@enduml\n',
+                          encoding="utf-8")
+        manifest.write_text(json.dumps({"version": 2, "engine": "plantuml", "diagramType": "c4-container",
+                                        "claims": [{"statement": "Asset container", "artifactRef": "line:3",
+                                                    "artifactQuote": "Container(asset", "provenance": "INFERRED",
+                                                    "evidence": [{"path": "Asset.java", "line": 1,
+                                                                  "quote": "class Asset"}]}]}), encoding="utf-8")
+        result = self.render("plantuml", source, "--source-repo", str(source_root),
+                             "--evidence", str(manifest))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        receipt = json.loads(result.stdout)
+        self.assertEqual(receipt["claimCoverage"], "partial")
+        self.assertEqual(receipt["untrackedIncludes"], ["line:2"])
+
     def test_v2_manifest_covers_drawio_cells_and_archify_items(self):
         from render_native_diagram import _validate_source_manifest
         source, source_root, manifest = self.source_backed()

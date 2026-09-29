@@ -2,6 +2,7 @@
 """Build context, validate source-anchored architecture IR, and render diagrams."""
 
 import argparse
+from collections import Counter
 import json
 import shutil
 import subprocess
@@ -10,10 +11,14 @@ import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from architecture_candidates import discover_candidates, validate_candidate_coverage
 from architecture_ir import build_context, validate_architecture
+from architecture_landscape import check_landscape_geometry
 from architecture_renderers import render_archify, render_drawio, render_mermaid, render_plantuml
 from codegraph_context import load_codegraph
 from diagram_profiles import CAPABILITIES, render_view, validate_companion_views, validate_view
+from engine_paths import find_engine, prepare_runtime
+from python_runtime import require_python
 
 EXPORT_FORMATS = {
     "mermaid": ("svg", "png", "pdf"),
@@ -118,17 +123,108 @@ def _render_export(kind, executable, source, target, fmt):
     return None
 
 
+def _deliver_bundle(args, root, ir, detail_paths):
+    """Render the overview and all declared details before publishing a bundle."""
+    output = args.output.resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    source_ir = args.ir.resolve()
+    base = source_ir.parent
+    detail_paths = set(detail_paths)
+    for item in ir["coverage"].get("omitted", []):
+        detail_paths.add((base / item["detailView"]).resolve())
+    views = [("overview", source_ir, ir)]
+    for path in sorted(detail_paths):
+        relative = path.relative_to(base)
+        name = "details/" + relative.with_suffix("").as_posix()
+        views.append((name, path,
+                      json.loads(path.read_text(encoding="utf-8"))))
+    with tempfile.TemporaryDirectory(prefix="architecture-delivery-", dir=output.parent) as directory:
+        stage = Path(directory) / "bundle"
+        stage.mkdir()
+        source_files = {source_ir, base / ir["coverage"]["inventoryFile"], *detail_paths}
+        for source_file in source_files:
+            target = stage / source_file.relative_to(base)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source_file, target)
+        reports = {}
+        for name, view_path, view in views:
+            command = [sys.executable, str(Path(__file__).resolve()), "render",
+                       "--source", str(root), "--ir", str(view_path),
+                       "--output", str(stage / name)]
+            for kind in args.format:
+                command.extend(("--format", kind))
+            requested_exports = list(args.export_for or [f"{kind}:png" for kind in args.format])
+            requested_exports.extend(f"{kind}:svg" for kind in args.svg_for or [])
+            for spec in dict.fromkeys(requested_exports):
+                command.extend(("--export-for", spec))
+            for kind in ("drawio", "plantuml", "mermaid", "archify"):
+                requested = getattr(args, f"{kind}_cli")
+                if requested:
+                    command.extend((f"--{kind}-cli", str(requested)))
+            process = subprocess.run(command, capture_output=True, text=True)
+            try:
+                report = json.loads(process.stdout)
+            except ValueError:
+                report = {"valid": False, "problems": [process.stderr or process.stdout]}
+            if process.returncode or not report.get("valid"):
+                print(json.dumps({"valid": False, "view": name, "problems": report.get("problems", [process.stderr])},
+                                 ensure_ascii=False))
+                return 1
+            if view["profile"] == "architecture-landscape" and "drawio" in args.format:
+                geometry_problems = check_landscape_geometry(
+                    (stage / name / "architecture.drawio").read_text(encoding="utf-8"))
+                if geometry_problems:
+                    print(json.dumps({"valid": False, "view": name,
+                                      "problems": geometry_problems}, ensure_ascii=False))
+                    return 1
+            reports[name] = {"rendererChecks": report["rendererChecks"],
+                             "artifacts": [str(Path(item).relative_to(stage))
+                                           for item in report["artifacts"]]}
+        coverage_summary = _coverage_summary(ir)
+        _write(stage / "manifest.json", json.dumps({"coverageCheck": "pass", "geometryCheck": "pass",
+                                                   "coverageSummary": coverage_summary,
+                                                   "views": reports}, ensure_ascii=False, indent=2) + "\n")
+        backup = None
+        if output.exists():
+            backup = Path(tempfile.mkdtemp(prefix="architecture-old-", dir=output.parent))
+            backup.rmdir()
+            output.replace(backup)
+        try:
+            stage.replace(output)
+        except OSError:
+            if backup is not None:
+                backup.replace(output)
+            raise
+        if backup is not None:
+            shutil.rmtree(backup)
+    print(json.dumps({"valid": True, "coverageCheck": "pass", "geometryCheck": "pass",
+                      "coverageSummary": coverage_summary,
+                      "views": reports, "output": str(output)}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _coverage_summary(ir):
+    coverage = ir.get("coverage", {})
+    decisions = coverage.get("decisions", []) if isinstance(coverage, dict) else []
+    counts = Counter(item.get("status") for item in decisions if isinstance(item, dict))
+    return {"overview": counts["overview"], "detail": counts["detail"],
+            "excluded": counts["excluded"], "manual": len(coverage.get("manualCandidates", [])),
+            "scopePaths": ir.get("scope", {}).get("sourcePaths", [])}
+
+
 def main(argv=None):
+    require_python()
+    prepare_runtime()
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("context", "validate", "render"):
+    for name in ("context", "inventory", "validate", "render", "deliver"):
         command = commands.add_parser(name)
         command.add_argument("--source", type=Path, required=True, help="repository root")
-        if name != "context":
+        if name not in {"context", "inventory"}:
             command.add_argument("--ir", type=Path, required=True)
         if name != "validate":
             command.add_argument("--output", type=Path, required=True)
-        if name == "render":
+        if name in {"render", "deliver"}:
             command.add_argument("--format", action="append", choices=("mermaid", "plantuml", "drawio", "archify"),
                                  help="requested diagram format; repeat for multiple formats")
             command.add_argument("--svg-for", action="append", choices=("mermaid", "plantuml", "drawio"),
@@ -142,10 +238,16 @@ def main(argv=None):
         if name == "context":
             command.add_argument("--focus", action="append", default=[],
                                  help="CodeGraph symbol whose direct callees should be included; repeat as needed")
+        if name == "inventory":
+            command.add_argument("--scope-prefix", action="append", default=[],
+                                 help="repository-relative path prefix; repeat for a scoped module")
+        if name == "validate":
+            command.add_argument("--strict-coverage", action="store_true",
+                                 help="require a fresh candidate inventory and complete decisions")
     args = parser.parse_args(argv)
-    if args.command == "render":
+    if args.command in {"render", "deliver"}:
         if not args.format:
-            parser.error("render requires at least one --format")
+            parser.error(f"{args.command} requires at least one --format")
         selected = list(dict.fromkeys(args.format))
         svg_for = list(dict.fromkeys(args.svg_for or []))
         if any(kind not in selected for kind in svg_for):
@@ -178,6 +280,16 @@ def main(argv=None):
         _write(args.output.resolve(), json.dumps(context, ensure_ascii=False, indent=2) + "\n")
         print(json.dumps({"context": str(args.output.resolve()), "stats": context["stats"], "warnings": context["warnings"]}, ensure_ascii=False))
         return 0
+    if args.command == "inventory":
+        try:
+            inventory = discover_candidates(root, args.scope_prefix)
+        except ValueError as error:
+            parser.error(str(error))
+        _write(args.output.resolve(), json.dumps(inventory, ensure_ascii=False, indent=2) + "\n")
+        print(json.dumps({"inventory": str(args.output.resolve()),
+                          "candidates": len(inventory["candidates"]),
+                          "scopePaths": inventory["scopePaths"]}, ensure_ascii=False))
+        return 0
 
     try:
         ir = json.loads(args.ir.read_text(encoding="utf-8"))
@@ -186,9 +298,16 @@ def main(argv=None):
         return 1
     problems = validate_view(ir, root) if isinstance(ir, dict) and ir.get("version") == 2 else validate_architecture(ir, root)
     coverage_check = "not_applicable"
+    detail_paths = []
     if not problems and ir["version"] == 2:
         coverage_check, coverage_problems = validate_companion_views(ir, root, args.ir)
         problems.extend(coverage_problems)
+        inventory_check, inventory_problems, detail_paths = validate_candidate_coverage(ir, root, args.ir)
+        problems.extend(inventory_problems)
+        if inventory_check != "not_checked":
+            coverage_check = inventory_check
+        if (args.command == "deliver" or getattr(args, "strict_coverage", False)) and coverage_check != "pass":
+            problems.append("strict coverage requires a fresh candidate inventory and all decisions")
     if problems:
         print(json.dumps({"valid": False, "problems": problems}, ensure_ascii=False, indent=2))
         return 1
@@ -196,8 +315,16 @@ def main(argv=None):
         summary = ({"profile": ir["profile"], "elements": len(ir["elements"]),
                     "coverageCheck": coverage_check}
                    if ir["version"] == 2 else {"domains": len(ir["domains"])})
+        if coverage_check == "pass":
+            summary["coverageSummary"] = _coverage_summary(ir)
         print(json.dumps({"valid": True, **summary}, ensure_ascii=False))
         return 0
+    if args.command == "deliver":
+        if ir["version"] != 2 or ir["profile"] != "architecture-landscape":
+            print(json.dumps({"valid": False, "problems": ["deliver requires an architecture-landscape IR v2 overview"]},
+                             ensure_ascii=False))
+            return 1
+        return _deliver_bundle(args, root, ir, detail_paths)
 
     if ir["version"] == 2:
         unsupported = [kind for kind in selected if kind not in CAPABILITIES[ir["profile"]]]
@@ -256,8 +383,7 @@ def main(argv=None):
         target_svg = output / f"architecture.{kind}.svg"
         requested_formats = exports[kind]
         requested = getattr(args, f"{kind}_cli")
-        executable = shutil.which(str(requested)) if requested else shutil.which(
-            {"mermaid": "mmdc", "plantuml": "plantuml", "drawio": "drawio"}[kind])
+        executable = find_engine(kind, requested)
         if not executable:
             required = bool(requested or requested_formats)
             result["rendererChecks"][kind] = "fail" if required else "skipped"
@@ -287,7 +413,7 @@ def main(argv=None):
     archify = None
     if "archify" in selected:
         target.unlink(missing_ok=True)
-        archify = shutil.which(str(args.archify_cli)) if args.archify_cli else shutil.which("archify")
+        archify = find_engine("archify", args.archify_cli)
     if archify:
         process = subprocess.run([archify, "deliver", "architecture", str(output / "architecture.archify.json"),
                                   str(target), "--quality", "showcase", "--json"], text=True, capture_output=True)

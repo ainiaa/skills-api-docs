@@ -16,6 +16,7 @@ from urllib.parse import quote
 from api_document_ir import ApiDocument, Endpoint, EnumBinding, EnumOption, Field, ResponseCode, Schema, TypeRef
 from discovery import CLASS_KINDS, METHOD_KINDS, SymbolLocation, select_engine
 from python_fastapi_adapter import scan_python_document
+from python_runtime import require_python
 
 
 SCALAR_TYPES = {"String", "CharSequence", "char", "Character", "boolean", "Boolean",
@@ -1016,6 +1017,7 @@ def endpoint_values(endpoint: Endpoint) -> List[Field]:
 
 
 def main() -> int:
+    require_python()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--language", choices=("java", "python"), default="java")
     parser.add_argument("--source", action="append", required=True, type=Path, help="Source root; repeat as needed")

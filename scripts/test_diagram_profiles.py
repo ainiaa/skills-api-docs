@@ -603,7 +603,16 @@ class DiagramProfilesTest(unittest.TestCase):
                    "--ir", str(overview_path)]
         good = subprocess.run(command, capture_output=True, text=True)
         self.assertEqual(good.returncode, 0, good.stdout + good.stderr)
-        self.assertEqual(json.loads(good.stdout)["coverageCheck"], "pass")
+        self.assertEqual(json.loads(good.stdout)["coverageCheck"], "declared_only")
+        strict = subprocess.run([*command, "--strict-coverage"], capture_output=True, text=True)
+        self.assertNotEqual(strict.returncode, 0)
+        self.assertIn("strict coverage", strict.stdout + strict.stderr)
+        detail["coverage"] = {"omitted": [{"element": "other", "detailView": "other.json"}]}
+        detail_path.write_text(json.dumps(detail), encoding="utf-8")
+        nested = subprocess.run(command, capture_output=True, text=True)
+        self.assertNotEqual(nested.returncode, 0)
+        self.assertIn("nested detail", nested.stdout + nested.stderr)
+        detail.pop("coverage")
         detail["relations"] = []
         detail_path.write_text(json.dumps(detail), encoding="utf-8")
         bad = subprocess.run(command, capture_output=True, text=True)

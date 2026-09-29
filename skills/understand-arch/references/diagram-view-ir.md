@@ -39,17 +39,27 @@ C4 elements need `description`; components and containers also need `technology`
 
 `architecture-landscape` is an overview convention for code-derived architecture when the user has not asked for strict C4. It displays source-backed entrances, an editable `scope.container` boundary around services and adapters, and a combined data/external dependency row. Node role controls native draw.io shape and color; relation `kind` controls red primary, blue secondary, or dashed orange dependency lines. Numbers on edges refer to a relation register with the full label and endpoints, keeping the canvas readable. `status: planned` is optional and requires direct evidence; never copy planned elements from a reference diagram into a code-derived view. A landscape needs concise `name` and `description` text, at most 12 elements and 12 relations. If larger, create an overview and focused views; do not omit evidence-backed details without a companion view. This profile is only supported by draw.io and does not claim C4 conformance.
 
-For each new landscape overview, record the source-backed candidates left off that canvas in `coverage.omitted` (use an empty list when none were found). Each entry has a reason, source evidence, a `detailView` filename beside the overview IR, and either an `element` ID, a relation `{from,to,label}`, or both. The CLI validates that the detail IR is source-backed and actually contains the stated element/relation; `coverageCheck: pass` confirms this declared inventory, while `not_declared` marks older IRs. This cannot discover candidates an author never recorded, so review the candidate list against the repository before delivery.
+For a new landscape overview, generate `candidates.json` with `inventory --source <repo> --output <workdir>/candidates.json`. The scanner creates candidates per source file for HTTP entrances (including multiline Spring mappings and `@HttpApi*Mapping`), MyBatis access, scheduled jobs, published Feign contracts, cache usages, and external client signals. Each candidate lists its matched `members`. These are **review candidates**, not proven business relationships. Check every candidate and member against code and CodeGraph, then add important missed relationships to `manualCandidates` with a source anchor. `scope.sourcePaths` must equal the inventory's `scopePaths`; an empty list means the whole repository. An explicit module request may use `inventory --scope-prefix <path>`.
+
+Each generated or manual candidate needs one decision: `overview` or `detail` maps to an element ID or an exact `{from,to,label}` relation; `excluded` requires a reason. A `*_usage` candidate must map to a relation if shown. Mapped claims must cite every member's source line, including the manual candidate's anchor. A detail decision names a nearby valid detail IR. `validate --strict-coverage` recomputes the inventory from current source and rejects stale, missing, duplicate, or unmapped candidates. `deliver` then renders the overview **and all details** with the official engine before publishing a bundle; `geometryCheck` checks card bounds and overlap. It does not prove business interpretation or all edge routing.
 
 ```json
-"coverage": {"omitted": [{
-  "element": "redis",
-  "relation": {"from": "payment", "to": "redis", "label": "付款幂等锁"},
-  "reason": "总览优先展示主要外部业务系统",
-  "detailView": "payment-detail.json",
-  "evidence": [{"path": "src/PaymentService.java", "line": 42, "quote": "redisManager.putnxCache"}]
-}]}
+"scope": {"system": "Payments", "container": "Payment service", "sourcePaths": []},
+"coverage": {
+  "inventoryFile": "candidates.json",
+  "manualCandidates": [],
+  "decisions": [
+    {"candidateId": "entrypoint_1234abcd5678", "status": "overview", "element": "api"},
+    {"candidateId": "cache_usage_1234abcd5678", "status": "detail",
+     "relation": {"from": "payment", "to": "redis", "label": "付款幂等锁"},
+     "detailView": "payment-detail.json", "reason": "运行时依赖放在细节图"},
+    {"candidateId": "external_client_1234abcd5678", "status": "excluded",
+     "reason": "该客户端只用于仓库外的测试环境"}
+  ]
+}
 ```
+
+Older overviews may use `coverage.omitted` with source evidence, a reason, and a `detailView`. It remains readable but reports `coverageCheck: declared_only`; no fresh candidate inventory was checked. An absent coverage field reports `not_declared`. Neither state meets strict delivery. The generated scanner cannot discover every architecture fact, so inspect CodeGraph and source and record missed candidates manually rather than treating `pass` as semantic proof.
 
 Sequence messages must be ordered. BPMN sequence flow may cross lanes within one pool but cannot cross pools; message flow connects different pools. The implemented BPMN subset does not claim executable BPMN XML conformance. An ERD entity may have `fields: [{"name":"id","type":"bigint","key":"PK"}]`; keys may be `PK`, `FK`, `UK`, or omitted. Only assert cardinality when repository evidence establishes it; if it does not, explain the gap instead of guessing.
 

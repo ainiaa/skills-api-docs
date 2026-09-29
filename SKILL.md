@@ -1,11 +1,11 @@
 ---
-name: api-savior-docs
+name: understand-docs
 description: Generate API documentation from Java Spring MVC, Feign, or Python FastAPI source, without IntelliJ IDEA. Use when asked for Markdown, Postman collections, or cURL examples from routes and request/response declarations.
 ---
 
-# API Savior Docs
+# Understand Docs
 
-Generate documentation with the API Savior RESTful Markdown contract from controller/Feign mapping annotations and real DTO declarations. Use Python 3.9 or newer:
+Generate documentation with the API Savior RESTful Markdown contract from controller/Feign mapping annotations and real DTO declarations. Use Python 3.11 or newer:
 
 ```bash
 python3 <skill-directory>/scripts/generate_api_docs.py \

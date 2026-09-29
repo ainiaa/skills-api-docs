@@ -217,6 +217,8 @@ def validate_companion_views(ir, root, ir_path):
     coverage = ir.get("coverage")
     if coverage is None:
         return "not_declared", []
+    if isinstance(coverage, dict) and "inventoryFile" in coverage and "omitted" not in coverage:
+        return "not_declared", []
     if not isinstance(coverage, dict) or not isinstance(coverage.get("omitted"), list):
         return "fail", ["coverage.omitted must be a list"]
     problems = []
@@ -250,6 +252,9 @@ def validate_companion_views(ir, root, ir_path):
         if detail_problems:
             problems.append(f"{label}: detailView is invalid: {'; '.join(detail_problems)}")
             continue
+        if isinstance(detail.get("coverage"), dict) and detail["coverage"].get("omitted"):
+            problems.append(f"{label}: nested detail omissions are not supported; flatten the bundle")
+            continue
         if _word(element) and not any(node["id"] == element for node in detail["elements"]):
             problems.append(f"{label}: detailView is missing element {element}")
         if isinstance(relation, dict):
@@ -258,7 +263,7 @@ def validate_companion_views(ir, root, ir_path):
             elif not any(all(link.get(key) == relation[key] for key in
                              ("from", "to", "label")) for link in detail["relations"]):
                 problems.append(f"{label}: detailView is missing relation {relation}")
-    return ("fail" if problems else "pass"), problems
+    return ("fail" if problems else "declared_only"), problems
 
 
 def _safe(value):

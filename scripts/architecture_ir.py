@@ -16,7 +16,10 @@ PROVENANCE = {"EXTRACTED", "INFERRED", "AMBIGUOUS"}
 IDENTIFIER = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
 DECLARATION = re.compile(r"\b(class|interface|enum|record|struct|trait|protocol|def|function|func)\s+([A-Za-z_$][\w$]*)")
 GO_DECLARATION = re.compile(r"\btype\s+([A-Za-z_]\w*)\s+(struct|interface)\b")
-ROUTE = re.compile(r"(?:@(?:Request|Get|Post|Put|Delete|Patch)Mapping|@(?:app|router)\.(?:get|post|put|delete|patch)|\b(?:app|router)\.(?:get|post|put|delete|patch))\s*\(\s*(?:value\s*=\s*)?['\"]([^'\"]+)['\"]")
+ROUTE = re.compile(r"(?:@(?:app|router)\.(?:get|post|put|delete|patch)|\b(?:app|router)\.(?:get|post|put|delete|patch))\s*\(\s*['\"]([^'\"]+)['\"]")
+JAVA_MAPPING = re.compile(r"(?m)^[ \t]*@(?:HttpApi)?(?:Request|Get|Post|Put|Delete|Patch)Mapping\s*\(([^)]*)\)", re.DOTALL)
+JAVA_ROUTE_NAMED = re.compile(r"\b(?:value|path)\s*=\s*(['\"])(.*?)\1", re.DOTALL)
+JAVA_ROUTE_DIRECT = re.compile(r"\s*(['\"])(.*?)\1", re.DOTALL)
 TABLE = re.compile(r"(?:\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?|@TableName\s*\(\s*['\"])([A-Za-z_][\w.]*)", re.IGNORECASE)
 
 
@@ -63,6 +66,13 @@ def build_context(root):
             lines = path.read_text(encoding="utf-8").splitlines()
         except (OSError, UnicodeError):
             continue
+        if path.suffix in {".java", ".kt"}:
+            source_text = "\n".join(lines)
+            for match in JAVA_MAPPING.finditer(source_text):
+                route = JAVA_ROUTE_NAMED.search(match[1]) or JAVA_ROUTE_DIRECT.match(match[1])
+                if route:
+                    context["routes"].append({"value": route[2], "path": relative,
+                                              "line": source_text.count("\n", 0, match.start()) + 1})
         parser = parsers.get(path.suffix)
         if parser:
             try:

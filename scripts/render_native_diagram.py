@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -12,6 +13,8 @@ from pathlib import Path
 
 from architecture_ir import _check_evidence
 from generate_architecture import EXPORT_FORMATS, _check_diagram, _check_export, _render_export
+from engine_paths import find_engine, prepare_runtime
+from python_runtime import require_python
 
 
 EXTENSIONS = {"mermaid": ".mmd", "plantuml": ".puml", "drawio": ".drawio",
@@ -20,6 +23,8 @@ BINARIES = {"mermaid": "mmdc", "plantuml": "plantuml", "drawio": "drawio",
             "archify": "archify"}
 ARCHIFY_TYPES = {"architecture", "workflow", "sequence", "dataflow", "lifecycle"}
 PROVENANCE = {"EXTRACTED", "INFERRED", "AMBIGUOUS"}
+INCLUDE = re.compile(r"^!(include(?:_once|_many|url)?|includesub)\s+(.+)$")
+START_UML = re.compile(r"^@startuml(?:\(id=([^)]*)\))?")
 ARCHIFY_MATERIAL = {
     "architecture": ("components", "boundaries", "connections"),
     "workflow": ("lanes", "phases", "groups", "nodes", "edges"),
@@ -63,9 +68,102 @@ def _archify_export(binary, html, output, formats):
             return [], str(error)
 
 
+def _selected_plantuml_lines(lines, selection):
+    if selection is None:
+        return list(enumerate(lines, 1))
+    kind, value = selection
+    if kind == "sub":
+        selected = []
+        inside = False
+        found = False
+        for number, line in enumerate(lines, 1):
+            text = line.strip()
+            if text.startswith("!startsub "):
+                inside = text.partition(" ")[2].strip() == value
+                found |= inside
+            elif text == "!endsub":
+                inside = False
+            elif inside:
+                selected.append((number, line))
+        return selected if found else None
+    blocks = []
+    start = None
+    block_id = None
+    for number, line in enumerate(lines, 1):
+        match = START_UML.match(line.strip())
+        if match:
+            start, block_id = number, match[1]
+        elif line.strip().startswith("@enduml") and start is not None:
+            blocks.append((start, number, block_id))
+            start = None
+    selected = next((block for index, block in enumerate(blocks)
+                     if str(index) == value or block[2] == value), None)
+    if selected is None:
+        return None
+    return [(number, lines[number - 1]) for number in range(selected[0] + 1, selected[1])]
+
+
+def _plantuml_refs(source):
+    """Inventory local include contents; report includes that cannot be inspected."""
+    base = source.resolve().parent
+    refs = {}
+    untracked = []
+    included_files = set()
+
+    def scan(path, prefix, active, selection=None):
+        key = (path, selection)
+        if key in active:
+            untracked.append(prefix + ":cycle")
+            return
+        active = active | {key}
+        lines = _selected_plantuml_lines(path.read_text(encoding="utf-8").splitlines(), selection)
+        if lines is None:
+            untracked.append(prefix + ":selection")
+            return
+        for number, line in lines:
+            value = line.strip()
+            ref = f"{prefix}line:{number}"
+            match = INCLUDE.match(value)
+            if match:
+                directive, target = match.groups()
+                if directive == "includeurl" or target.startswith(("<", "http://", "https://")):
+                    untracked.append(ref)
+                    continue
+                filename, separator, fragment = target.partition("!")
+                target = filename.strip().strip('"\'')
+                if directive == "includesub" and not separator:
+                    untracked.append(ref)
+                    continue
+                included = (path.parent / target).resolve()
+                if not included.is_relative_to(base) or not included.is_file():
+                    untracked.append(ref)
+                    continue
+                included_files.add(included)
+                relative = included.relative_to(base).as_posix()
+                selected = (("sub" if directive == "includesub" else "block", fragment)
+                            if separator else None)
+                scan(included, f"include:{relative}:", active, selected)
+                continue
+            if not value or value in {"{", "}"} or value.startswith(("'", "//", "@startuml", "@enduml",
+                                                                        "!pragma", "title ", "skinparam ",
+                                                                        "hide ", "LAYOUT_", "left to right direction",
+                                                                        "legend", "endlegend", "!startsub", "!endsub")):
+                continue
+            refs[ref] = value
+
+    scan(source.resolve(), "", set())
+    return refs, untracked, sorted(included_files)
+
+
+def _untracked_includes(source):
+    return _plantuml_refs(source)[1]
+
+
 def _material_refs(source, engine, diagram_type):
     """Identify authored diagram statements whose source claims need anchors."""
-    if engine in {"mermaid", "plantuml"}:
+    if engine == "plantuml":
+        return _plantuml_refs(source)[0]
+    if engine == "mermaid":
         refs = {}
         in_frontmatter = False
         for number, line in enumerate(source.read_text(encoding="utf-8").splitlines(), 1):
@@ -77,17 +175,12 @@ def _material_refs(source, engine, diagram_type):
                 continue
             if value.startswith(("%%", "'", "//")):
                 continue
-            if engine == "plantuml":
-                if value.startswith(("@startuml", "@enduml", "!include", "!pragma",
-                                     "title ", "skinparam ", "hide ", "LAYOUT_",
-                                     "left to right direction", "legend", "endlegend")):
-                    continue
-            elif value.startswith(("classDiagram", "flowchart ", "graph ",
-                                   "sequenceDiagram", "erDiagram", "stateDiagram",
-                                   "gantt", "journey", "mindmap", "timeline", "pie",
-                                   "C4Context", "C4Container", "C4Component",
-                                   "C4Dynamic", "C4Deployment", "title ", "direction ",
-                                   "classDef ", "style ", "linkStyle ", "%%{")):
+            if value.startswith(("classDiagram", "flowchart ", "graph ",
+                                 "sequenceDiagram", "erDiagram", "stateDiagram",
+                                 "gantt", "journey", "mindmap", "timeline", "pie",
+                                 "C4Context", "C4Container", "C4Component",
+                                 "C4Dynamic", "C4Deployment", "title ", "direction ",
+                                 "classDef ", "style ", "linkStyle ", "%%{")):
                 continue
             refs[f"line:{number}"] = value
         return refs
@@ -144,7 +237,10 @@ def _validate_source_manifest(path, root, source, engine, actual_type):
         if not isinstance(statement, str) or not statement.strip():
             problems.append(f"{label}: statement must be non-empty")
         artifact_quote = claim.get("artifactQuote")
-        if not isinstance(artifact_quote, str) or not artifact_quote.strip() or artifact_quote not in diagram_text:
+        if (not isinstance(artifact_quote, str) or not artifact_quote.strip() or
+                (artifact_quote not in diagram_text and
+                 not (version == 2 and claim.get("artifactRef") in material and
+                      artifact_quote in material[claim["artifactRef"]]))):
             problems.append(f"{label}: artifactQuote must occur verbatim in native source")
         if claim.get("provenance") not in PROVENANCE:
             problems.append(f"{label}: provenance must be EXTRACTED, INFERRED, or AMBIGUOUS")
@@ -169,6 +265,8 @@ def _validate_source_manifest(path, root, source, engine, actual_type):
 
 
 def main(argv=None):
+    require_python()
+    prepare_runtime()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--engine", required=True, choices=tuple(EXTENSIONS))
     parser.add_argument("--input", required=True, type=Path)
@@ -222,10 +320,14 @@ def main(argv=None):
         if problems:
             parser.error("; ".join(problems))
 
+    untracked_includes = (_untracked_includes(source) if manifest and manifest["version"] == 2
+                          and engine == "plantuml" else [])
     metadata = {"sourceEvidence": "anchors_validated" if manifest else "not_checked",
-                "claimCoverage": ("complete" if manifest and manifest["version"] == 2 else
-                                  "not_checked"),
+                "claimCoverage": ("partial" if untracked_includes else "complete"
+                                  if manifest and manifest["version"] == 2 else "not_checked"),
                 "claimSemantics": "not_proven" if manifest else "not_checked"}
+    if untracked_includes:
+        metadata["untrackedIncludes"] = untracked_includes
     if manifest:
         metadata.update({"claimCount": len(manifest["claims"]),
                          "declaredDiagramType": manifest["diagramType"]})
@@ -233,7 +335,7 @@ def main(argv=None):
     def report(ok, artifacts=(), **extra):
         return _result(ok, engine, artifacts, **metadata, **extra)
 
-    executable = shutil.which(str(args.engine_cli)) if args.engine_cli else shutil.which(BINARIES[engine])
+    executable = find_engine(engine, args.engine_cli)
     if not executable:
         parser.error(f"official {engine} CLI is unavailable: {args.engine_cli or BINARIES[engine]}")
 
@@ -251,6 +353,14 @@ def main(argv=None):
         copied.replace(native)
     finally:
         copied.unlink(missing_ok=True)
+    include_artifacts = []
+    if engine == "plantuml":
+        for included in _plantuml_refs(source)[2]:
+            target = output / included.relative_to(source.parent)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if included != target:
+                shutil.copyfile(included, target)
+            include_artifacts.append(target)
     evidence_artifacts = []
     if manifest:
         evidence_copy = output / "diagram.evidence.json"
@@ -288,7 +398,7 @@ def main(argv=None):
                            output / f"diagram.{engine}.svg" if "svg" in formats else None)
     if error:
         return report(False, evidence_artifacts, officialCheck="fail", exportCheck="not_run", problems=[error])
-    artifacts = [native, *evidence_artifacts]
+    artifacts = [native, *include_artifacts, *evidence_artifacts]
     if "svg" in formats:
         artifacts.append(output / f"diagram.{engine}.svg")
     for fmt in formats:

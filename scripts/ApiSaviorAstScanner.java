@@ -43,7 +43,7 @@ import javax.lang.model.element.Modifier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-/** Java 11 source-only scanner used by the api-savior-docs Skill. */
+/** Java 11 source-only scanner used by the understand-docs Skill. */
 public final class ApiSaviorAstScanner {
 
     private static final Set<String> CONTROLLER_ANNOTATIONS = new HashSet<>(Arrays.asList(
