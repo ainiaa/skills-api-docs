@@ -18,8 +18,10 @@ class InstallTests(unittest.TestCase):
         self.claude_home = self.root / "claude home"
         self.target = self.codex_home / "skills" / "understand-docs"
         self.arch_target = self.codex_home / "skills" / "understand-arch"
+        self.project_target = self.codex_home / "skills" / "understand-project"
         self.claude_docs_target = self.claude_home / "skills" / "understand-docs"
         self.claude_arch_target = self.claude_home / "skills" / "understand-arch"
+        self.claude_project_target = self.claude_home / "skills" / "understand-project"
         self.old_target = self.codex_home / "skills" / "api-savior-docs"
         self.previous_target = self.codex_home / "skills" / "understand-api-docs"
         self.old_arch_target = self.codex_home / "skills" / "understand-api-arch"
@@ -45,11 +47,20 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(self.target.resolve(), REPOSITORY)
         self.assertTrue(self.arch_target.is_symlink())
         self.assertEqual(self.arch_target.resolve(), REPOSITORY / "skills" / "understand-arch")
+        self.assertTrue(self.project_target.is_symlink())
+        self.assertEqual(self.project_target.resolve(), REPOSITORY / "skills" / "understand-project")
+        self.assertTrue((self.project_target / "assets" / "project-overview.md").is_file())
+        self.assertTrue((self.project_target / "assets" / "feature-description.md").is_file())
+        self.assertTrue((self.project_target / "assets" / "developer-guide.md").is_file())
+        self.assertTrue((self.project_target / "assets" / "architecture-overview.md").is_file())
+        self.assertTrue((self.project_target / "../../scripts/project_doc_context.py").resolve().is_file())
+        self.assertTrue((self.project_target / "../../scripts/project_doc_impact.py").resolve().is_file())
 
         second = self.run_installer()
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertEqual(self.target.resolve(), REPOSITORY)
         self.assertEqual(self.arch_target.resolve(), REPOSITORY / "skills" / "understand-arch")
+        self.assertEqual(self.project_target.resolve(), REPOSITORY / "skills" / "understand-project")
         self.assertEqual(self.run_installer("--doctor").returncode, 0)
 
     def test_install_uses_home_when_codex_home_is_unset(self):
@@ -84,6 +95,17 @@ class InstallTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
         self.assertFalse(self.target.exists())
+
+    def test_install_preserves_existing_project_target_without_partial_install(self):
+        self.project_target.mkdir(parents=True)
+        sentinel = self.project_target / "sentinel.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+
+        result = self.run_installer()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
+        self.assertFalse(self.target.exists())
+        self.assertFalse(self.arch_target.exists())
 
     def test_install_completes_previous_api_only_installation(self):
         self.target.parent.mkdir(parents=True)
@@ -190,6 +212,11 @@ class InstallTests(unittest.TestCase):
         self.arch_target.unlink()
         self.assertNotEqual(self.run_installer("--doctor").returncode, 0)
 
+    def test_doctor_requires_project_skill(self):
+        self.assertEqual(self.run_installer().returncode, 0)
+        self.project_target.unlink()
+        self.assertNotEqual(self.run_installer("--doctor").returncode, 0)
+
     def test_uninstall_removes_only_own_symlink(self):
         self.assertEqual(self.run_installer().returncode, 0)
         result = self.run_installer("--uninstall")
@@ -198,6 +225,8 @@ class InstallTests(unittest.TestCase):
         self.assertFalse(self.target.is_symlink())
         self.assertFalse(self.arch_target.exists())
         self.assertFalse(self.arch_target.is_symlink())
+        self.assertFalse(self.project_target.exists())
+        self.assertFalse(self.project_target.is_symlink())
         self.assertTrue((REPOSITORY / "SKILL.md").is_file())
 
     def test_uninstall_removes_owned_old_names(self):
@@ -229,6 +258,7 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.claude_docs_target.resolve(), REPOSITORY)
         self.assertEqual(self.claude_arch_target.resolve(), REPOSITORY / "skills" / "understand-arch")
+        self.assertEqual(self.claude_project_target.resolve(), REPOSITORY / "skills" / "understand-project")
         self.assertEqual(self.run_installer("--doctor", isolated=False).returncode, 0)
 
     def test_claude_only_and_no_engines(self):
@@ -237,6 +267,7 @@ class InstallTests(unittest.TestCase):
         self.assertFalse(self.target.exists())
         self.assertEqual(self.claude_docs_target.resolve(), REPOSITORY)
         self.assertEqual(self.claude_arch_target.resolve(), REPOSITORY / "skills" / "understand-arch")
+        self.assertEqual(self.claude_project_target.resolve(), REPOSITORY / "skills" / "understand-project")
         self.assertEqual(self.run_installer("--doctor", "--host", "claude", "--no-engines",
                                             isolated=False).returncode, 0)
         self.assertEqual(self.run_installer("--uninstall", "--host", "claude",

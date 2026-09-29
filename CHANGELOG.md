@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-29
+
+- 新增 `understand-project` Skill：从 PRD、当前代码和测试生成带来源的项目介绍、功能说明、架构总览或开发者上手手册，呈现业务目标、规则判据、端到端链路、现状与改动、验证场景和风险；上手手册参考 PDLC 新人引导，覆盖环境、运行、测试、阅读路线、文档索引与排障。提供四个固定章节模板、按主题提取的源码与新鲜图谱上下文、已有文档的变更影响清单，并检查章节顺序、来源行号及源码版本。未知口径与工期标为待确认；按 PDLC 阶段产出时沿用其独立流程。安装器和诊断流程同步支持第三个入口。
+- 架构总览模板覆盖系统全景、核心流程、服务或模块边界、通信、数据、可观测性、扩展性、五维评估和改进建议。要求系统全景图与核心流程图，跨系统关系复杂时补上下文图；校验器支持 `--kind architecture`，检查两类图及本地图片路径，并要求评分逐项有来源，资料不足时标为待评估。图可引用 `understand-arch` 已验收的图源与导出文件。
+- 架构总览校验增加 `--check-diagrams`：调用官方引擎渲染内嵌 Mermaid 和链接的原生图源，检查图片真实格式、资源路径及交付目录中的可编辑图源；有 `--source` 时校验原生图的 v2 证据清单或 IR `deliver` bundle 的覆盖和渲染回执。模板补充部署关系、架构决策和质量场景的取证提示，并允许架构评分表后独立添加质量场景表。
+
 ## [0.3.0] - 2026-09-29
 
 - 修复官方引擎选择顺序：显式 CLI 路径、对应的 `*_OFFICIAL_CLI` 环境变量、本 Skill 组安装的引擎、系统 PATH 依次优先；Linux 无桌面环境会使用带 Xvfb 的 draw.io 包装器。
@@ -44,7 +50,8 @@
 - 修复 macOS 符号链接环境下 tree-sitter 回退路径未 resolve 导致 narrowed scan 静默失效的问题；`--no-codegraph` 的优先级高于测试钩子环境变量。
 - 文档同步：SKILL.md 与 README 增补发现引擎章节、降级规则与可选依赖安装方式。
 
-[Unreleased]: https://github.com/ainiaa/skills-api-docs/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/ainiaa/skills-api-docs/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/ainiaa/skills-api-docs/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ainiaa/skills-api-docs/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ainiaa/skills-api-docs/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ainiaa/skills-api-docs/releases/tag/v0.1.0

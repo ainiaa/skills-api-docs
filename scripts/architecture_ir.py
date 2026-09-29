@@ -28,9 +28,36 @@ def _head(root):
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
-def _has_working_tree_changes(root):
-    result = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no", "--", "."], capture_output=True, text=True)
-    return result.returncode == 0 and bool(result.stdout.strip())
+def _project_changes(root, base=None):
+    """Return project paths changed since base, including uncommitted files."""
+    commands = []
+    if base:
+        commands.append(["diff", "--name-only", "-z", base, "HEAD", "--", "."])
+    commands.extend((["diff", "--cached", "--name-only", "-z", "--", "."],
+                     ["diff", "--name-only", "-z", "--", "."],
+                     ["ls-files", "--others", "--exclude-standard", "-z", "--", "."]))
+    changed = set()
+    for arguments in commands:
+        result = subprocess.run(["git", "-C", str(root), *arguments], capture_output=True)
+        if result.returncode:
+            return None
+        changed.update(path.decode("utf-8", errors="replace") for path in result.stdout.split(b"\0") if path)
+    return {path for path in changed if not any(part in SKIP_DIRS for part in Path(path).parts)}
+
+
+def _graph_status(root, graph_hash):
+    if not graph_hash:
+        return {"fresh": False, "reason": "missing source revision"}
+    resolved = subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", "--end-of-options",
+                               f"{graph_hash}^{{commit}}"], capture_output=True, text=True)
+    if resolved.returncode:
+        return {"fresh": False, "reason": "unresolvable source revision"}
+    changes = _project_changes(root, resolved.stdout.strip())
+    if changes is None:
+        return {"fresh": False, "reason": "cannot inspect source changes"}
+    if changes:
+        return {"fresh": False, "reason": "source changed", "changedFiles": sorted(changes)}
+    return {"fresh": True, "reason": "source unchanged"}
 
 
 def _fresh_graph_nodes(root):
@@ -38,14 +65,13 @@ def _fresh_graph_nodes(root):
     if not ua.is_dir():
         ua = root / ".understand-anything"
     path = ua / "knowledge-graph.json"
-    if not path.is_file() or _has_working_tree_changes(root):
+    if not path.is_file():
         return None
     try:
         graph = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    commit = _head(root)
-    if not commit or graph.get("project", {}).get("gitCommitHash") != commit:
+    if not _graph_status(root, graph.get("project", {}).get("gitCommitHash"))["fresh"]:
         return None
     return graph.get("nodes", [])
 
@@ -111,8 +137,9 @@ def build_context(root):
     if not ua.is_dir() and (root / ".understand-anything").is_dir():
         ua = root / ".understand-anything"
     warnings = []
-    if context["gitCommitHash"] and _has_working_tree_changes(root):
+    if context["gitCommitHash"] and _project_changes(root):
         warnings.append("working tree differs from HEAD; cached graph or domain graph may be stale")
+    context["graphStatus"] = {}
     for filename, field in (("knowledge-graph.json", "knowledgeGraph"), ("domain-graph.json", "domainGraph")):
         path = ua / filename
         if not path.is_file():
@@ -123,10 +150,10 @@ def build_context(root):
             warnings.append(f"{filename}: {error}")
             continue
         graph_hash = graph.get("project", {}).get("gitCommitHash", "")
-        if not graph_hash:
-            warnings.append(f"{filename} has no source revision; verify its content against current code")
-        elif context["gitCommitHash"] and graph_hash != context["gitCommitHash"]:
-            warnings.append(f"{filename} is from commit {graph_hash}, current HEAD is {context['gitCommitHash']}")
+        status = _graph_status(root, graph_hash)
+        context["graphStatus"][field] = status
+        if not status["fresh"]:
+            warnings.append(f"{filename} is stale or unverified: {status['reason']}")
         context[field] = graph
     context["stats"] = {"files": len(files), "symbols": len(context["symbols"]), "routes": len(context["routes"]),
                         "configKeys": len(context["configKeys"]), "tables": len(context["tables"]),
