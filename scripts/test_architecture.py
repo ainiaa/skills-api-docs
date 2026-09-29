@@ -90,6 +90,23 @@ class ArchitectureTests(unittest.TestCase):
         (self.root / "src" / "OrderController.java").write_text("class ChangedController {}\n", encoding="utf-8")
         context = build_context(self.root)
         self.assertTrue(any("working tree" in warning for warning in context["warnings"]), context["warnings"])
+        self.assertFalse(context["graphStatus"]["domainGraph"]["fresh"])
+
+    def test_context_marks_fresh_graph_and_rejects_untracked_source(self):
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        subprocess.run(["git", "-C", str(self.root), "add", "src/OrderController.java"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "init"], check=True)
+        commit = subprocess.check_output(["git", "-C", str(self.root), "rev-parse", "HEAD"], text=True).strip()
+        ua = self.root / ".ua"
+        ua.mkdir()
+        (ua / "knowledge-graph.json").write_text(json.dumps({
+            "project": {"gitCommitHash": commit},
+            "nodes": [{"id": "file:src/OrderController.java", "type": "file", "name": "OrderController", "filePath": "src/OrderController.java"}],
+            "edges": [],
+        }))
+        self.assertTrue(build_context(self.root)["graphStatus"]["knowledgeGraph"]["fresh"])
+        (self.root / "src" / "New.java").write_text("class New {}\n", encoding="utf-8")
+        self.assertFalse(build_context(self.root)["graphStatus"]["knowledgeGraph"]["fresh"])
 
     def test_fresh_graph_must_contain_extracted_class(self):
         subprocess.run(["git", "init", "-q", str(self.root)], check=True)

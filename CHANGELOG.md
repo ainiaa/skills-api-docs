@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-29
+
+- 新增 `understand-project` Skill：从 PRD、当前代码和测试生成带来源的项目介绍、功能说明或开发者上手手册，呈现业务目标、规则判据、端到端链路、现状与改动、验证场景和风险；上手手册参考 PDLC 新人引导，覆盖环境、运行、测试、阅读路线、文档索引与排障。提供三个固定章节模板、按主题提取的源码与新鲜图谱上下文、已有文档的变更影响清单，并检查章节顺序、来源行号及源码版本。未知口径与工期标为待确认；按 PDLC 阶段产出时沿用其独立流程。安装器和诊断流程同步支持第三个入口。
+
 ## [0.3.0] - 2026-09-29
 
 - 修复官方引擎选择顺序：显式 CLI 路径、对应的 `*_OFFICIAL_CLI` 环境变量、本 Skill 组安装的引擎、系统 PATH 依次优先；Linux 无桌面环境会使用带 Xvfb 的 draw.io 包装器。
@@ -44,7 +48,8 @@
 - 修复 macOS 符号链接环境下 tree-sitter 回退路径未 resolve 导致 narrowed scan 静默失效的问题；`--no-codegraph` 的优先级高于测试钩子环境变量。
 - 文档同步：SKILL.md 与 README 增补发现引擎章节、降级规则与可选依赖安装方式。
 
-[Unreleased]: https://github.com/ainiaa/skills-api-docs/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/ainiaa/skills-api-docs/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/ainiaa/skills-api-docs/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ainiaa/skills-api-docs/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ainiaa/skills-api-docs/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ainiaa/skills-api-docs/releases/tag/v0.1.0

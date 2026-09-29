@@ -1,12 +1,12 @@
-# Understand Docs 与 Understand Arch
+# Understand Docs、Understand Arch 与 Understand Project
 
-面向 Codex 和 Claude Code 的源码文档 Skill 组：`understand-docs` 生成接口文档，`understand-arch` 生成和校验技术图。两个宿主共用同一份仓库与渲染引擎安装。
+面向 Codex 和 Claude Code 的源码文档 Skill 组：`understand-docs` 生成接口文档，`understand-arch` 生成和校验技术图，`understand-project` 生成项目介绍、功能说明与开发者上手手册。两个宿主共用同一份仓库与渲染引擎安装。
 
-当前版本：[0.3.0](VERSION)。改动记录见[变更日志](CHANGELOG.md)。
+当前版本：[0.4.0](VERSION)。改动记录见[变更日志](CHANGELOG.md)。
 
 ## 快速开始
 
-1. 克隆仓库，一次安装两个 Skill 与缺失的绘图引擎：
+1. 克隆仓库，一次安装三个 Skill 与缺失的绘图引擎：
 
    ```bash
    git clone https://github.com/ainiaa/skills-api-docs.git
@@ -25,8 +25,11 @@
    ```text
    Codex：使用 $understand-docs 为这个 Spring Controller 生成 API 文档。
    Codex：使用 $understand-arch 根据这个项目的代码生成 draw.io 架构图，并导出 PNG。
+   Codex：使用 $understand-project 根据代码和现有需求资料写项目介绍及主要功能说明。
+   Codex：使用 $understand-project 为新开发者写项目上手手册。
    Claude Code：/understand-docs 为这个 Spring Controller 生成 API 文档。
    Claude Code：/understand-arch 根据这个项目的代码生成 draw.io 架构图，并导出 PNG。
+   Claude Code：/understand-project 为退款功能写现状、规则、端到端链路和风险说明。
    ```
 
 生成文档和图时，只需向当前宿主提出需求；内部 Python 脚本由 Skill 按需调用，普通使用者不必运行它们。
@@ -37,12 +40,13 @@
 |---|---|---|
 | 从 Spring MVC、Feign 或 FastAPI 源码生成接口文档 | [`understand-docs`](SKILL.md) | Markdown、Postman Collection、cURL 示例 |
 | 根据仓库证据绘制架构、流程、时序、ERD 等技术图 | [`understand-arch`](skills/understand-arch/SKILL.md) | 可编辑图源、按需导出的图片或 PDF、验证回执 |
+| 根据源码与需求资料介绍项目、描述功能或引导新开发者 | [`understand-project`](skills/understand-project/SKILL.md) | 带来源的项目总览、功能说明或上手手册 Markdown |
 
 ## 为什么会有它
 
-Understand Docs 将 API Savior IDEA 插件的 RESTful 文档风格带到 Codex 和命令行，从真实路由、DTO 和枚举声明生成文档。Understand Arch 让“根据代码画架构图”成为可检查的工作：先确定图型和范围，再关联源码证据、生成图源、调用实际渲染引擎，并检查成品。
+Understand Docs 将 API Savior IDEA 插件的 RESTful 文档风格带到 Codex 和命令行，从真实路由、DTO 和枚举声明生成文档。Understand Arch 让“根据代码画架构图”成为可检查的工作：先确定图型和范围，再关联源码证据、生成图源、调用实际渲染引擎，并检查成品。Understand Project 将需求口径、实际实现和验证证据组织成面向读者的项目或功能叙述。
 
-两个 Skill 都会保留源码无法确定的部分，不把推断伪装成已验证事实。图源通过引擎验收，也仍需审阅业务解释和视觉效果。
+三个 Skill 都会保留源码无法确定的部分，不把推断伪装成已验证事实。图源通过引擎验收，也仍需审阅业务解释和视觉效果。
 
 ## 能力与边界
 
@@ -50,6 +54,7 @@ Understand Docs 将 API Savior IDEA 插件的 RESTful 文档风格带到 Codex �
 |---|---|
 | 接口文档输入 | Java Spring MVC Controller、Feign Client；Python FastAPI 路由 |
 | 接口文档内容 | 请求和响应字段、JSON 示例、源码可解析的枚举；未解析类型会明确标出 |
+| 项目、功能与上手说明 | 服务对象、功能地图、业务规则、端到端链路、现状与改动、验证场景和风险；上手手册另含环境、运行、测试与排障入口 |
 | 架构图生成 | 源码上下文、候选清单、分型 IR v2、覆盖决策、验证及交付；项目／模块总览默认使用 draw.io |
 | 其他图型 | C4、UML 时序、BPMN 可视子集、ERD 等已实现 profile；其余官方图型可编写引擎原生文件并验收 |
 | 可用渲染引擎 | Mermaid、PlantUML、draw.io、Archify；按需求选择引擎和导出格式 |
@@ -82,11 +87,11 @@ HTML 是 Archify 的交互展示文件；其余三种引擎的 HTML 不是本项
 
 ## 安装与升级
 
-[install.sh](install.sh) 默认把两个 Skill 软链接到 Codex 的 `~/.codex/skills` 和 Claude Code 的 `~/.claude/skills`，并自动安装当前缺失的四个绘图引擎。两边共用本仓库文件，更新一次即可同步更新。安装前会检查所有目标路径，保留无关目录和软链接；本仓库拥有的旧名称链接会迁移。`--uninstall` 只移除本仓库拥有的 Skill 链接，**不会删除**可被其他项目复用的引擎。[Claude Code 官方文档](https://code.claude.com/docs/en/skills#choose-where-skills-load)确认个人 Skill 目录与软链接可用；这里支持的是本地 Claude Code，会话之外的 Claude 云端环境不读取本机目录。
+[install.sh](install.sh) 默认把三个 Skill 软链接到 Codex 的 `~/.codex/skills` 和 Claude Code 的 `~/.claude/skills`，并自动安装当前缺失的四个绘图引擎。两边共用本仓库文件，更新一次即可同步更新。安装前会检查所有目标路径，保留无关目录和软链接；本仓库拥有的旧名称链接会迁移。`--uninstall` 只移除本仓库拥有的 Skill 链接，**不会删除**可被其他项目复用的引擎。[Claude Code 官方文档](https://code.claude.com/docs/en/skills#choose-where-skills-load)确认个人 Skill 目录与软链接可用；这里支持的是本地 Claude Code，会话之外的 Claude 云端环境不读取本机目录。
 
 | 安装命令 | 行为 |
 |---|---|
-| `bash install.sh` | Codex、Claude Code 均安装两个 Skill；补齐全部缺失引擎 |
+| `bash install.sh` | Codex、Claude Code 均安装三个 Skill；补齐全部缺失引擎 |
 | `bash install.sh --engine drawio` | 两个宿主安装 Skill；只补齐 draw.io。`--engine` 可重复指定 |
 | `bash install.sh --no-engines` | 只安装 Skill，并记录“不要自动安装引擎”的选择 |
 | `bash install.sh --host claude --engine mermaid` | 只为 Claude Code 安装 Skill，只补齐 Mermaid |
@@ -105,7 +110,7 @@ HTML 是 Archify 的交互展示文件；其余三种引擎的 HTML 不是本项
 | draw.io | `drawio` | macOS 自动下载并校验 [draw.io Desktop](https://github.com/jgraph/drawio-desktop/releases) 29.3.6 通用版 DMG，安装在用户目录；x86-64 的 apt 系 Linux 使用校验过的 29.3.6 安装包，并准备无桌面环境导出所需的 Xvfb |
 | Archify | `archify` | 自动准备 Node.js、Chrome/Chromium，并安装校验 [Archify](https://github.com/tt-a1i/archify/releases/tag/v2.16.0) 2.16.0 |
 
-安装与内部 CLI 要求 **Python 3.11 或更新版本**；解析 Java 源码还需要 JDK 11 或更新版本。macOS 自动安装 Chrome／Java 需要 Homebrew；Linux 的系统包安装需要 apt 与相应权限。系统缺少这些条件、下载校验失败或格式不可用时会明确报错，不会悄悄换用其他引擎或格式。手动指定 CLI 路径的开发者可查看[两个 Skill 的入口说明](#文档)。
+安装与内部 CLI 要求 **Python 3.11 或更新版本**；解析 Java 源码还需要 JDK 11 或更新版本。macOS 自动安装 Chrome／Java 需要 Homebrew；Linux 的系统包安装需要 apt 与相应权限。系统缺少这些条件、下载校验失败或格式不可用时会明确报错，不会悄悄换用其他引擎或格式。手动指定 CLI 路径的开发者可查看[Skill 入口说明](#文档)。
 
 ## 使用 Understand Docs
 
@@ -118,6 +123,21 @@ HTML 是 Archify 的交互展示文件；其余三种引擎的 HTML 不是本项
 ```
 
 Skill 会定位源码并运行生成器；完整交付物包括 Markdown、Postman Collection 和 cURL 示例。若一个方法对应多个路由，它会明确选择具体 HTTP 方法与路径；若 DTO 来自另一个源码根或 JAR，则需要能访问该依赖。无法从源码确定的类型或示例值会标出，不会猜造真实请求。已有 CodeGraph 或 tree-sitter 可辅助定位，字段与枚举仍由源码解析。手动 CLI 参数保留在 [Understand Docs Skill](SKILL.md) 中，普通使用无需填写源码路径和命令参数。
+
+## 使用 Understand Project
+
+在目标项目中描述读者和范围即可。Skill 根据[项目总览模板](skills/understand-project/assets/project-overview.md)、[功能说明模板](skills/understand-project/assets/feature-description.md)或[开发者上手手册模板](skills/understand-project/assets/developer-guide.md)起稿，核对 PRD／其他需求资料、代码、测试与实际命令，再生成带来源的 Markdown。默认保留所选模板的二级章节及顺序，资料不足的地方明确标为待确认；只有用户要求其他框架时才调整。开发者手册包含从入口到关键规则与复杂模块的推荐阅读路线。默认写到目标仓库之外，除非明确要求更新仓库文档或发布到飞书。明确要求按 PDLC 阶段产出时，沿用 PDLC 自己的模板、目录与状态流程。
+
+```text
+使用 $understand-project 为这个项目写一份给新同事看的介绍：业务目标、主要功能、端到端链路和模块职责。
+使用 $understand-project 说明退款功能的现状、判据表、改动点、验证场景与风险。
+使用 $understand-project 为新开发者生成上手手册，写明环境、启动、测试、文档索引和常见问题。
+使用 $understand-project 根据代码和最新 PRD 更新已有的项目介绍，保留人工补充内容。
+```
+
+只有源码时可以说明实际实现，不能从代码猜测产品决策、工期或上线状态；缺失口径会列为待确认。上手手册只列项目实际支持的命令，不假设存在 PDLC 的 `make status` 等入口。复杂链路可配图，接口字段细节继续交给 `understand-docs`。
+
+写作前可用 [`project_doc_context.py`](scripts/project_doc_context.py) 按文件、符号或业务词提取聚焦上下文；它只引用已核实为新鲜的 understand-anything 图谱，过期图谱会被排除。更新已有文档时，[`project_doc_impact.py`](scripts/project_doc_impact.py) 根据文档记录的源码版本和引用，列出直接受影响章节及仍需人工检查的未映射文件。交付前以 `--source <目标仓库>` 运行 [`validate_project_doc.py`](scripts/validate_project_doc.py)，检查章节、版本、每章来源和本地来源行号；业务解释、图示语义和 PRD 与代码的一致性仍需人工核对。
 
 ## 使用 Understand Arch
 
@@ -150,6 +170,7 @@ Skill 会读取源码和可用的 CodeGraph 信息，选择合适的图型，生
 
 - [Understand Docs Skill](SKILL.md) · [API Document IR](references/api-document-ir.md)
 - [Understand Arch Skill](skills/understand-arch/SKILL.md) · [图型与证据规范](docs/DIAGRAM_STANDARD.md)
+- [Understand Project Skill](skills/understand-project/SKILL.md)
 - [渲染引擎能力审计](docs/RENDERER_CAPABILITY_AUDIT.md) · [draw.io 模板取舍](docs/ARCHITECTURE_TEMPLATE_RESEARCH.md)
 - [变更日志](CHANGELOG.md)
 

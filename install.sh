@@ -6,8 +6,8 @@ CODEX_SKILLS_DIR="${CODEX_HOME:-${HOME}/.codex}/skills"
 CLAUDE_SKILLS_DIR="${CLAUDE_HOME:-${HOME}/.claude}/skills"
 PYTHON_BIN="${UNDERSTAND_PYTHON:-python3}"
 RENDERER_HOME="${UNDERSTAND_RENDERER_HOME:-${HOME}/.local/share/understand-skills/renderers}"
-SKILL_NAMES=(understand-docs understand-arch)
-SOURCES=("$SOURCE_DIR" "$SOURCE_DIR/skills/understand-arch")
+SKILL_NAMES=(understand-docs understand-arch understand-project)
+SOURCES=("$SOURCE_DIR" "$SOURCE_DIR/skills/understand-arch" "$SOURCE_DIR/skills/understand-project")
 OLD_NAMES=(api-savior-docs understand-api-docs understand-api-arch)
 OLD_SOURCES=("$SOURCE_DIR" "$SOURCE_DIR" "$SOURCE_DIR/skills/understand-api-arch")
 ACTION=install
@@ -24,7 +24,7 @@ Usage:
   bash install.sh --doctor [--host codex|claude|both] [--engine NAME ... | --no-engines]
   bash install.sh --uninstall [--host codex|claude|both]
 
-Default: install both skills for Codex and Claude Code, and install all missing
+Default: install all three skills for Codex and Claude Code, and install all missing
 Mermaid, PlantUML, draw.io, and Archify renderers. --engine installs/checks only
 the named renderer; --no-engines installs/checks only the skill links.
 Uninstall removes this checkout's skill links, never shared renderer programs.
@@ -77,6 +77,13 @@ if [[ "$ACTION" == install ]]; then
   if [[ ! -f "$SOURCE_DIR/SKILL.md" || ! -f "$SOURCE_DIR/VERSION" ||
         ! -f "$SOURCE_DIR/scripts/generate_api_docs.py" ||
         ! -f "${SOURCES[1]}/SKILL.md" ||
+        ! -f "${SOURCES[2]}/SKILL.md" ||
+        ! -f "${SOURCES[2]}/assets/project-overview.md" ||
+        ! -f "${SOURCES[2]}/assets/feature-description.md" ||
+        ! -f "${SOURCES[2]}/assets/developer-guide.md" ||
+        ! -f "$SOURCE_DIR/scripts/validate_project_doc.py" ||
+        ! -f "$SOURCE_DIR/scripts/project_doc_context.py" ||
+        ! -f "$SOURCE_DIR/scripts/project_doc_impact.py" ||
         ! -f "$SOURCE_DIR/scripts/generate_architecture.py" ]]; then
     echo "Error: incomplete skill group checkout: $SOURCE_DIR" >&2
     exit 1
