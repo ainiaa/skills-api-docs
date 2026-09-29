@@ -19,6 +19,9 @@ def find_engine(engine, explicit=None):
         raise ValueError(f"unknown renderer: {engine}")
     if explicit is not None:
         return shutil.which(str(explicit))
+    configured = os.environ.get(f"{engine.upper()}_OFFICIAL_CLI")
+    if configured:
+        return shutil.which(configured)
     managed = renderer_home() / "bin" / ENGINE_BINARIES[engine]
     if managed.is_file() and os.access(managed, os.X_OK):
         return str(managed)

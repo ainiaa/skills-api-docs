@@ -157,7 +157,8 @@ class NativeDiagramTest(unittest.TestCase):
         self.assertEqual(untracked, [])
         self.assertEqual(included, [(self.root / "blocks.puml").resolve()])
 
-    @unittest.skipUnless(shutil.which("plantuml"), "official PlantUML CLI is unavailable")
+    @unittest.skipUnless(os.environ.get("PLANTUML_OFFICIAL_CLI") or shutil.which("plantuml"),
+                         "official PlantUML CLI is unavailable")
     def test_official_plantuml_selected_block_is_packaged(self):
         _, source_root, manifest = self.source_backed()
         source = self.root / "view.puml"
@@ -178,7 +179,8 @@ class NativeDiagramTest(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)["claimCoverage"], "complete")
         self.assertTrue((self.output / "blocks.puml").is_file())
 
-    @unittest.skipUnless(shutil.which("plantuml"), "official PlantUML CLI is unavailable")
+    @unittest.skipUnless(os.environ.get("PLANTUML_OFFICIAL_CLI") or shutil.which("plantuml"),
+                         "official PlantUML CLI is unavailable")
     def test_plantuml_includesub_is_packaged_and_claimed(self):
         _, source_root, manifest = self.source_backed()
         source = self.root / "view.puml"
@@ -209,7 +211,8 @@ class NativeDiagramTest(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)["claimCoverage"], "complete")
         self.assertTrue((self.output / "part.puml").is_file())
 
-    @unittest.skipUnless(shutil.which("plantuml"), "official PlantUML CLI is unavailable")
+    @unittest.skipUnless(os.environ.get("PLANTUML_OFFICIAL_CLI") or shutil.which("plantuml"),
+                         "official PlantUML CLI is unavailable")
     def test_official_plantuml_local_include_is_packaged(self):
         _, source_root, manifest = self.source_backed()
         source = self.root / "view.puml"
@@ -232,7 +235,8 @@ class NativeDiagramTest(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)["claimCoverage"], "complete")
         self.assertTrue((self.output / "links.puml").is_file())
 
-    @unittest.skipUnless(shutil.which("plantuml"), "official PlantUML CLI is unavailable")
+    @unittest.skipUnless(os.environ.get("PLANTUML_OFFICIAL_CLI") or shutil.which("plantuml"),
+                         "official PlantUML CLI is unavailable")
     def test_official_plantuml_library_include_reports_partial_coverage(self):
         _, source_root, manifest = self.source_backed()
         source = self.root / "view.puml"

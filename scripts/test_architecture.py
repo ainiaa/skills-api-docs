@@ -302,9 +302,9 @@ class ArchitectureTests(unittest.TestCase):
                 "render", "--source", str(self.root), "--ir", str(ir_path), "--output", str(output)]
         missing_format = subprocess.run(base, text=True, capture_output=True)
         self.assertNotEqual(missing_format.returncode, 0)
-        missing_svg_engine = subprocess.run([*base, "--format", "mermaid", "--svg-for", "mermaid"],
-                                            text=True, capture_output=True,
-                                            env=dict(os.environ, PATH="/usr/bin:/bin"))
+        missing_svg_engine = subprocess.run([*base, "--format", "mermaid", "--svg-for", "mermaid",
+                                             "--mermaid-cli", str(self.root / "missing-mmdc")],
+                                            text=True, capture_output=True)
         self.assertNotEqual(missing_svg_engine.returncode, 0)
         mermaid = subprocess.run([*base, "--format", "mermaid", "--mermaid-cli", str(engine)],
                                  text=True, capture_output=True)
@@ -347,7 +347,7 @@ class ArchitectureTests(unittest.TestCase):
         archify.chmod(0o755)
         command = [sys.executable, str(Path(__file__).with_name("generate_architecture.py")),
                    "render", "--source", str(self.root), "--ir", str(ir_path), "--output", str(output),
-                   "--format", "archify"]
+                   "--format", "archify", "--archify-cli", str(archify)]
         environment = dict(os.environ, PATH=str(self.root) + os.pathsep + os.environ["PATH"])
         first = subprocess.run(command, text=True, capture_output=True, env=environment)
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
@@ -498,9 +498,9 @@ class ArchitectureTests(unittest.TestCase):
                 rejected = subprocess.run([*base, "--export-for", export], text=True, capture_output=True)
                 self.assertNotEqual(rejected.returncode, 0)
                 self.assertFalse((self.root / "output").exists())
-        missing_archify = subprocess.run([*base[:-2], "--format", "archify", "--export-for", "archify:png"],
-                                         text=True, capture_output=True,
-                                         env=dict(os.environ, PATH="/usr/bin:/bin"))
+        missing_archify = subprocess.run([*base[:-2], "--format", "archify", "--export-for", "archify:png",
+                                          "--archify-cli", str(self.root / "missing-archify")],
+                                         text=True, capture_output=True)
         self.assertNotEqual(missing_archify.returncode, 0)
         self.assertFalse((self.root / "output" / "architecture.archify.png").exists())
 

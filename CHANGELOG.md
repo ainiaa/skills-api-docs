@@ -6,7 +6,7 @@
 
 ## [0.3.0] - 2026-09-29
 
-- 修复官方引擎选择顺序：显式 CLI 路径优先，其次使用本 Skill 组安装的引擎，最后查找系统 PATH；Linux 无桌面环境会使用带 Xvfb 的 draw.io 包装器。
+- 修复官方引擎选择顺序：显式 CLI 路径、对应的 `*_OFFICIAL_CLI` 环境变量、本 Skill 组安装的引擎、系统 PATH 依次优先；Linux 无桌面环境会使用带 Xvfb 的 draw.io 包装器。
 - CI 改为从空用户目录通过正式安装脚本准备四个渲染引擎，并运行官方引擎验收；GitHub Ubuntu 运行器的 Mermaid Chromium 沙箱限制仅在 CI 包装器中处理。
 - 安装器默认为 Codex 和 Claude Code 同时链接两个 Skill，并自动补齐缺失的 Mermaid、PlantUML、draw.io、Archify 引擎；可用 `--host`、重复 `--engine` 或 `--no-engines` 限定范围。显式跳过引擎会保留偏好，Skill 后续不擅自安装；已安装的引擎可复用，卸载 Skill 不删除共享引擎。Python 最低版本提升为 3.11，生成与渲染入口会进行版本检查。
 - Skill 名称统一为 `understand-docs` 与 `understand-arch`；安装器迁移本仓库拥有的 `api-savior-docs`、`understand-api-docs`、`understand-api-arch` 旧链接，并保留无关同名路径。

@@ -19,6 +19,20 @@ class PythonRuntimeTests(unittest.TestCase):
 
 
 class EnginePathTests(unittest.TestCase):
+    def test_environment_cli_precedes_managed_engine(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            managed = home / "bin" / "mmdc"
+            managed.parent.mkdir()
+            managed.write_text("#!/bin/sh\n", encoding="utf-8")
+            managed.chmod(0o755)
+            override = home / "mmdc-ci"
+            override.write_text("#!/bin/sh\n", encoding="utf-8")
+            override.chmod(0o755)
+            with patch.dict(os.environ, UNDERSTAND_RENDERER_HOME=str(home),
+                            MERMAID_OFFICIAL_CLI=str(override)):
+                self.assertEqual(find_engine("mermaid"), str(override))
+
     def test_managed_engine_precedes_system_binary(self):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
@@ -26,7 +40,7 @@ class EnginePathTests(unittest.TestCase):
             executable.parent.mkdir()
             executable.write_text("#!/bin/sh\n", encoding="utf-8")
             executable.chmod(0o755)
-            with patch.dict(os.environ, UNDERSTAND_RENDERER_HOME=str(home)):
+            with patch.dict(os.environ, UNDERSTAND_RENDERER_HOME=str(home), DRAWIO_OFFICIAL_CLI=""):
                 with patch("engine_paths.shutil.which", return_value="/usr/bin/drawio"):
                     self.assertEqual(find_engine("drawio"), str(executable))
 
@@ -37,7 +51,7 @@ class EnginePathTests(unittest.TestCase):
             executable.parent.mkdir()
             executable.write_text("#!/bin/sh\n", encoding="utf-8")
             executable.chmod(0o755)
-            with patch.dict(os.environ, UNDERSTAND_RENDERER_HOME=str(home)):
+            with patch.dict(os.environ, UNDERSTAND_RENDERER_HOME=str(home), DRAWIO_OFFICIAL_CLI=""):
                 with patch("engine_paths.shutil.which", return_value=None):
                     self.assertEqual(find_engine("drawio"), str(executable))
 
