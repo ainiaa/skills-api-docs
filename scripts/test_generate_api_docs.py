@@ -63,6 +63,32 @@ class ParseEndpointsTest(unittest.TestCase):
         self.assertIn('"explicit": 5', markdown)
         self.assertIn('"quantity": 2', render_postman(document, "")["item"][0]["request"]["body"]["raw"])
 
+    def test_schema_minimum_keeps_generated_examples_within_integer_constraints(self):
+        source = '''
+            package example;
+            class Request {
+                @Schema(minimum = "1") private int quantity;
+                @Min(2) @Schema(minimum = "3") private int stricter;
+                @Schema(minimum = "invalid") private int unknown;
+            }
+            @RestController class DemoController {
+                @PostMapping("/save") void save(@RequestBody Request request) { }
+            }
+        '''
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "DemoController.java").write_text(source, encoding="utf-8")
+            document = scan_java_document([Path(directory)])
+        expected = {'quantity': 1, 'stricter': 3, 'unknown': 0}
+        markdown = render_markdown(document, "")
+        postman = render_postman(document, "")["item"][0]["request"]["body"]["raw"]
+        curl = render_curl(document, "")
+        self.assertEqual(expected, json.loads(postman))
+        for name, value in expected.items():
+            self.assertIn(f'"{name}": {value}', markdown)
+            self.assertIn(f'"{name}": {value}', curl)
+        self.assertIn("最小值为 1", markdown)
+        self.assertIn("最小值为 3", markdown)
+
     def test_json_property_and_request_param_names_are_used_on_wire(self):
         source = '''
             package example;

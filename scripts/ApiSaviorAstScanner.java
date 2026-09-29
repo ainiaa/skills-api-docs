@@ -676,13 +676,22 @@ public final class ApiSaviorAstScanner {
             }
         }
         AnnotationTree minimum = annotation(node.getModifiers(), "Min");
-        if (minimum != null) {
+        for (AnnotationTree constraint : new AnnotationTree[]{minimum, schema}) {
+            if (constraint == null) {
+                continue;
+            }
             try {
-                field.minimum = Long.parseLong(annotationValue(minimum, "value", "").replace("_", "").replaceAll("[lL]$", ""));
-                field.notes += (field.notes.isEmpty() ? "" : "；") + "最小值为 " + field.minimum;
+                String key = constraint == schema ? "minimum" : "value";
+                long lowerBound = Long.parseLong(annotationValue(constraint, key, "").replace("_", "").replaceAll("[lL]$", ""));
+                if (field.minimum == null || lowerBound > field.minimum) {
+                    field.minimum = lowerBound;
+                }
             } catch (NumberFormatException ignored) {
                 // Leave nonconstant or invalid minimum unresolved.
             }
+        }
+        if (field.minimum != null) {
+            field.notes += (field.notes.isEmpty() ? "" : "；") + "最小值为 " + field.minimum;
         }
         for (AnnotationTree annotation : node.getModifiers().getAnnotations()) {
             for (ExpressionTree argument : annotation.getArguments()) {
