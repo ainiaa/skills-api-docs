@@ -52,6 +52,7 @@ class InstallTests(unittest.TestCase):
         self.assertTrue((self.project_target / "assets" / "project-overview.md").is_file())
         self.assertTrue((self.project_target / "assets" / "feature-description.md").is_file())
         self.assertTrue((self.project_target / "assets" / "developer-guide.md").is_file())
+        self.assertTrue((self.project_target / "assets" / "architecture-overview.md").is_file())
         self.assertTrue((self.project_target / "../../scripts/project_doc_context.py").resolve().is_file())
         self.assertTrue((self.project_target / "../../scripts/project_doc_impact.py").resolve().is_file())
 

@@ -81,6 +81,7 @@ if [[ "$ACTION" == install ]]; then
         ! -f "${SOURCES[2]}/assets/project-overview.md" ||
         ! -f "${SOURCES[2]}/assets/feature-description.md" ||
         ! -f "${SOURCES[2]}/assets/developer-guide.md" ||
+        ! -f "${SOURCES[2]}/assets/architecture-overview.md" ||
         ! -f "$SOURCE_DIR/scripts/validate_project_doc.py" ||
         ! -f "$SOURCE_DIR/scripts/project_doc_context.py" ||
         ! -f "$SOURCE_DIR/scripts/project_doc_impact.py" ||

@@ -40,7 +40,7 @@
 |---|---|---|
 | 从 Spring MVC、Feign 或 FastAPI 源码生成接口文档 | [`understand-docs`](SKILL.md) | Markdown、Postman Collection、cURL 示例 |
 | 根据仓库证据绘制架构、流程、时序、ERD 等技术图 | [`understand-arch`](skills/understand-arch/SKILL.md) | 可编辑图源、按需导出的图片或 PDF、验证回执 |
-| 根据源码与需求资料介绍项目、描述功能或引导新开发者 | [`understand-project`](skills/understand-project/SKILL.md) | 带来源的项目总览、功能说明或上手手册 Markdown |
+| 根据源码与需求资料介绍项目、评估架构、描述功能或引导新开发者 | [`understand-project`](skills/understand-project/SKILL.md) | 带来源的项目总览、架构总览、功能说明或上手手册 Markdown |
 
 ## 为什么会有它
 
@@ -55,6 +55,7 @@ Understand Docs 将 API Savior IDEA 插件的 RESTful 文档风格带到 Codex �
 | 接口文档输入 | Java Spring MVC Controller、Feign Client；Python FastAPI 路由 |
 | 接口文档内容 | 请求和响应字段、JSON 示例、源码可解析的枚举；未解析类型会明确标出 |
 | 项目、功能与上手说明 | 服务对象、功能地图、业务规则、端到端链路、现状与改动、验证场景和风险；上手手册另含环境、运行、测试与排障入口 |
+| 架构总览文档 | 系统全景图、核心流程图、模块边界、通信、数据、可观测性、扩展性及有依据的五维评估；跨系统关系复杂时补系统上下文图 |
 | 架构图生成 | 源码上下文、候选清单、分型 IR v2、覆盖决策、验证及交付；项目／模块总览默认使用 draw.io |
 | 其他图型 | C4、UML 时序、BPMN 可视子集、ERD 等已实现 profile；其余官方图型可编写引擎原生文件并验收 |
 | 可用渲染引擎 | Mermaid、PlantUML、draw.io、Archify；按需求选择引擎和导出格式 |
@@ -126,18 +127,19 @@ Skill 会定位源码并运行生成器；完整交付物包括 Markdown、Postm
 
 ## 使用 Understand Project
 
-在目标项目中描述读者和范围即可。Skill 根据[项目总览模板](skills/understand-project/assets/project-overview.md)、[功能说明模板](skills/understand-project/assets/feature-description.md)或[开发者上手手册模板](skills/understand-project/assets/developer-guide.md)起稿，核对 PRD／其他需求资料、代码、测试与实际命令，再生成带来源的 Markdown。默认保留所选模板的二级章节及顺序，资料不足的地方明确标为待确认；只有用户要求其他框架时才调整。开发者手册包含从入口到关键规则与复杂模块的推荐阅读路线。默认写到目标仓库之外，除非明确要求更新仓库文档或发布到飞书。明确要求按 PDLC 阶段产出时，沿用 PDLC 自己的模板、目录与状态流程。
+在目标项目中描述读者和范围即可。Skill 根据[项目总览模板](skills/understand-project/assets/project-overview.md)、[功能说明模板](skills/understand-project/assets/feature-description.md)、[架构总览模板](skills/understand-project/assets/architecture-overview.md)或[开发者上手手册模板](skills/understand-project/assets/developer-guide.md)起稿，核对需求资料、代码、测试与实际命令，再生成带来源的 Markdown。默认保留所选模板的二级章节及顺序，资料不足的地方明确标为待确认；只有用户要求其他框架时才调整。架构总览吸收 PDLC 的系统全景、通信、数据、可观测性、扩展性与改进建议结构，并要求系统全景图和核心流程图；跨系统关系复杂时再补系统上下文图。图可嵌入本地图片并链接可编辑图源，或在支持 Mermaid 的交付环境中嵌入经过渲染检查的源码。评分需要逐项依据，缺少运行资料时写待评估。开发者手册包含从入口到关键规则与复杂模块的推荐阅读路线。默认写到目标仓库之外，除非明确要求更新仓库文档或发布到飞书。明确要求按 PDLC 阶段产出时，沿用 PDLC 自己的模板、目录与状态流程。
 
 ```text
 使用 $understand-project 为这个项目写一份给新同事看的介绍：业务目标、主要功能、端到端链路和模块职责。
 使用 $understand-project 说明退款功能的现状、判据表、改动点、验证场景与风险。
 使用 $understand-project 为新开发者生成上手手册，写明环境、启动、测试、文档索引和常见问题。
+使用 $understand-project 为这个系统写架构总览文档，包含系统全景架构图、核心流程图，以及模块边界、通信、数据与架构风险。
 使用 $understand-project 根据代码和最新 PRD 更新已有的项目介绍，保留人工补充内容。
 ```
 
-只有源码时可以说明实际实现，不能从代码猜测产品决策、工期或上线状态；缺失口径会列为待确认。上手手册只列项目实际支持的命令，不假设存在 PDLC 的 `make status` 等入口。复杂链路可配图，接口字段细节继续交给 `understand-docs`。
+只有源码时可以说明实际实现，不能从代码猜测产品决策、工期或上线状态；缺失口径会列为待确认。上手手册只列项目实际支持的命令，不假设存在 PDLC 的 `make status` 等入口。复杂链路可配图，接口字段细节继续交给 `understand-docs`。架构总览交付时，Markdown、导出图片、可编辑图源与图形证据放在同一交付目录及其子目录内并使用相对链接；校验命令加 `--check-diagrams`，会调用已安装的官方引擎实际渲染 Mermaid 和链接的图源，并检查图片内容及路径。传入 `--source` 时，原生图需保留同目录的 v2 `diagram.evidence.json`；IR `deliver` 图需保留含 `manifest.json` 的完整 bundle。图与源码所表达的业务关系仍需人工复核。
 
-写作前可用 [`project_doc_context.py`](scripts/project_doc_context.py) 按文件、符号或业务词提取聚焦上下文；它只引用已核实为新鲜的 understand-anything 图谱，过期图谱会被排除。更新已有文档时，[`project_doc_impact.py`](scripts/project_doc_impact.py) 根据文档记录的源码版本和引用，列出直接受影响章节及仍需人工检查的未映射文件。交付前以 `--source <目标仓库>` 运行 [`validate_project_doc.py`](scripts/validate_project_doc.py)，检查章节、版本、每章来源和本地来源行号；业务解释、图示语义和 PRD 与代码的一致性仍需人工核对。
+写作前可用 [`project_doc_context.py`](scripts/project_doc_context.py) 按文件、符号或业务词提取聚焦上下文；它只引用已核实为新鲜的 understand-anything 图谱，过期图谱会被排除。更新已有文档时，[`project_doc_impact.py`](scripts/project_doc_impact.py) 根据文档记录的源码版本和引用，列出直接受影响章节及仍需人工检查的未映射文件。交付前以 `--source <目标仓库>` 运行 [`validate_project_doc.py`](scripts/validate_project_doc.py)，检查章节、版本、每章来源和本地来源行号；架构模式还检查必备图及本地图片路径，并要求五维评估完整、给分时逐项提供来源。业务解释与图示语义仍需人工核对。
 
 ## 使用 Understand Arch
 
