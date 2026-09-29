@@ -2,7 +2,7 @@
 
 面向 Codex 和 Claude Code 的源码文档 Skill 组：`understand-docs` 生成接口文档，`understand-arch` 生成和校验技术图，`understand-project` 生成项目介绍、功能说明与开发者上手手册。两个宿主共用同一份仓库与渲染引擎安装。
 
-当前版本：[0.4.0](VERSION)。改动记录见[变更日志](CHANGELOG.md)。
+当前版本：[0.4.1](VERSION)。改动记录见[变更日志](CHANGELOG.md)。
 
 ## 快速开始
 
