@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-29
+
+- CI 改为从空用户目录通过正式安装脚本准备四个渲染引擎，并运行官方引擎验收；GitHub Ubuntu 运行器的 Mermaid Chromium 沙箱限制仅在 CI 包装器中处理。
 - 安装器默认为 Codex 和 Claude Code 同时链接两个 Skill，并自动补齐缺失的 Mermaid、PlantUML、draw.io、Archify 引擎；可用 `--host`、重复 `--engine` 或 `--no-engines` 限定范围。显式跳过引擎会保留偏好，Skill 后续不擅自安装；已安装的引擎可复用，卸载 Skill 不删除共享引擎。Python 最低版本提升为 3.11，生成与渲染入口会进行版本检查。
 - Skill 名称统一为 `understand-docs` 与 `understand-arch`；安装器迁移本仓库拥有的 `api-savior-docs`、`understand-api-docs`、`understand-api-arch` 旧链接，并保留无关同名路径。
 - 安装方式改为 Skill 组：根目录 `install.sh` 一次安装、诊断和卸载 `understand-docs` 与 `understand-arch` 两个入口；兼容旧版只安装一个入口的环境，并在写入前检查两个目标路径，避免冲突造成部分安装。`install-arch.sh` 保留为单独管理入口。
@@ -40,6 +43,7 @@
 - 修复 macOS 符号链接环境下 tree-sitter 回退路径未 resolve 导致 narrowed scan 静默失效的问题；`--no-codegraph` 的优先级高于测试钩子环境变量。
 - 文档同步：SKILL.md 与 README 增补发现引擎章节、降级规则与可选依赖安装方式。
 
-[Unreleased]: https://github.com/ainiaa/skills-api-docs/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/ainiaa/skills-api-docs/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/ainiaa/skills-api-docs/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ainiaa/skills-api-docs/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ainiaa/skills-api-docs/releases/tag/v0.1.0

@@ -9,30 +9,24 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: tt-a1i/archify
-          ref: c826e6c3a7abad19c0f3cd1ca57207d54b1ad8de # v2.16.0
-          path: .archify
-          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Verify pinned Archify checkout
-        run: test "$(git -C .archify rev-parse HEAD)" = c826e6c3a7abad19c0f3cd1ca57207d54b1ad8de
-      - name: Verify Chrome for Archify exports
-        run: command -v google-chrome
+      - name: Install pinned Archify through the skill installer
+        run: python3 scripts/install_renderers.py --engine archify
       - name: Run official Archify acceptance test
         env:
-          ARCHIFY_OFFICIAL_CLI: ${{ github.workspace }}/.archify/archify/bin/archify.mjs
+          ARCHIFY_OFFICIAL_CLI: ${{ github.workspace }}/.renderers/managed/bin/archify
         run: python3 scripts/test_architecture.py
       - name: Run all five native Archify mode tests
         env:
-          ARCHIFY_OFFICIAL_CLI: ${{ github.workspace }}/.archify/archify/bin/archify.mjs
+          ARCHIFY_OFFICIAL_CLI: ${{ github.workspace }}/.renderers/managed/bin/archify
         run: python3 -m unittest discover -s scripts -p test_native_diagrams.py
+    env:
+      UNDERSTAND_RENDERER_HOME: ${{ github.workspace }}/.renderers/managed
 
   diagram-renderers:
     runs-on: ubuntu-24.04
@@ -48,21 +42,18 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Install pinned official renderers
+      - name: Install pinned official renderers through the skill installer
         run: |
-          npm install --prefix .renderers/mermaid @mermaid-js/mermaid-cli@12.0.0
-          curl -fL https://github.com/plantuml/plantuml/releases/download/v1.2026.8/plantuml-1.2026.8.jar -o /tmp/plantuml.jar
-          echo '5e1ecfa8ecd32c90b03bbf3b1eb6f020943f98ab0fcf4032be31a0002ee2c462  /tmp/plantuml.jar' | sha256sum -c -
-          curl -fL https://github.com/jgraph/drawio-desktop/releases/download/v29.3.6/drawio-amd64-29.3.6.deb -o /tmp/drawio.deb
-          echo 'ff13b6604806faa3f1cfe169ef940a1358914c83905edf2cda9afb939a0fb3f4  /tmp/drawio.deb' | sha256sum -c -
-          sudo apt-get update
-          sudo apt-get install -y xvfb /tmp/drawio.deb
-          printf '#!/bin/sh\nexec java -jar /tmp/plantuml.jar "$@"\n' > /tmp/plantuml
-          printf '#!/bin/sh\nexec xvfb-run -a /usr/bin/drawio "$@"\n' > /tmp/drawio
-          chmod +x /tmp/plantuml /tmp/drawio
+          python3 scripts/install_renderers.py --engine mermaid --engine plantuml --engine drawio
+          # GitHub's Ubuntu runner blocks Chromium's user-namespace sandbox; scope this override to CI.
+          printf '{"args":["--no-sandbox"]}\n' > /tmp/mermaid-puppeteer-ci.json
+          printf '#!/bin/sh\nexec "%s" --puppeteerConfigFile /tmp/mermaid-puppeteer-ci.json "$@"\n' "$UNDERSTAND_RENDERER_HOME/bin/mmdc" > /tmp/mmdc-ci
+          chmod +x /tmp/mmdc-ci
       - name: Run official Mermaid, PlantUML, and draw.io acceptance test
         env:
-          MERMAID_OFFICIAL_CLI: ${{ github.workspace }}/.renderers/mermaid/node_modules/.bin/mmdc
-          PLANTUML_OFFICIAL_CLI: /tmp/plantuml
-          DRAWIO_OFFICIAL_CLI: /tmp/drawio
+          MERMAID_OFFICIAL_CLI: /tmp/mmdc-ci
+          PLANTUML_OFFICIAL_CLI: ${{ github.workspace }}/.renderers/managed/bin/plantuml
+          DRAWIO_OFFICIAL_CLI: ${{ github.workspace }}/.renderers/managed/bin/drawio
         run: python3 -m unittest discover -s scripts -p 'test_*.py'
+    env:
+      UNDERSTAND_RENDERER_HOME: ${{ github.workspace }}/.renderers/managed
