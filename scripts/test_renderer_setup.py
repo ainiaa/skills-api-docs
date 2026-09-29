@@ -19,6 +19,17 @@ class PythonRuntimeTests(unittest.TestCase):
 
 
 class EnginePathTests(unittest.TestCase):
+    def test_managed_engine_precedes_system_binary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            executable = home / "bin" / "drawio"
+            executable.parent.mkdir()
+            executable.write_text("#!/bin/sh\n", encoding="utf-8")
+            executable.chmod(0o755)
+            with patch.dict(os.environ, UNDERSTAND_RENDERER_HOME=str(home)):
+                with patch("engine_paths.shutil.which", return_value="/usr/bin/drawio"):
+                    self.assertEqual(find_engine("drawio"), str(executable))
+
     def test_managed_engine_is_found_without_path_changes(self):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)

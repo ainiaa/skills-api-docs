@@ -19,11 +19,10 @@ def find_engine(engine, explicit=None):
         raise ValueError(f"unknown renderer: {engine}")
     if explicit is not None:
         return shutil.which(str(explicit))
-    system = shutil.which(ENGINE_BINARIES[engine])
-    if system:
-        return system
     managed = renderer_home() / "bin" / ENGINE_BINARIES[engine]
-    return str(managed) if managed.is_file() and os.access(managed, os.X_OK) else None
+    if managed.is_file() and os.access(managed, os.X_OK):
+        return str(managed)
+    return shutil.which(ENGINE_BINARIES[engine])
 
 
 def prepare_runtime():
