@@ -50,9 +50,12 @@ class UpdateTests(unittest.TestCase):
         self.git(self.root, "clone", str(self.remote), str(self.checkout))
         self.environment = dict(os.environ, CODEX_HOME=str(self.root / "codex"),
                                 CLAUDE_HOME=str(self.root / "claude"),
+                                HOME=str(self.root),
                                 UNDERSTAND_PYTHON=sys.executable,
                                 UNDERSTAND_RENDERER_HOME=str(self.root / "renderers"),
                                 UPDATE_TEST_LOG=str(self.root / "engine-calls.jsonl"))
+        for variable in ("DSH_HOME", "PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME"):
+            self.environment.pop(variable, None)
 
     @staticmethod
     def git(directory, *arguments):
@@ -168,6 +171,39 @@ class UpdateTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("own Git checkout", result.stderr)
         self.assert_no_dependency_changes()
+
+    def test_update_preserves_each_new_host_selection_through_fresh_installer(self):
+        self.advance_remote()
+        for host, relative in (("zcode", ".zcode/skills"), ("dsh", ".dsh/skills"),
+                               ("gemini", ".gemini/skills"), ("grok", ".grok/skills"),
+                               ("pi", ".pi/agent/skills"), ("opencode", ".config/opencode/skills")):
+            with self.subTest(host=host):
+                result = self.run_update("--host", host, "--engine", "mermaid")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual((self.checkout / "VERSION").read_text(), "0.5.1\n")
+                directory = self.root / relative
+                for name in ("project-docs", "project-docs-api", "project-docs-diagram", "project-docs-overview"):
+                    self.assertEqual((directory / name).resolve(), self.checkout / "skills" / name)
+                    (directory / name).unlink()
+                self.assertFalse((self.root / "codex" / "skills").exists())
+                self.assertFalse((self.root / "claude" / "skills").exists())
+        calls = [json.loads(line) for line in (self.root / "engine-calls.jsonl").read_text().splitlines()]
+        self.assertEqual(len(calls), 6)
+        for arguments in calls:
+            self.assertEqual(arguments, ["--engine", "mermaid", "--update"])
+
+    def test_update_all_relinks_eight_hosts_without_changing_engine_preference(self):
+        self.advance_remote()
+        marker = self.root / "renderers" / "no-auto-install"
+        marker.parent.mkdir()
+        marker.write_text("keep")
+        result = self.run_update("--host", "all", "--no-engines")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for relative in ("codex/skills", "claude/skills", ".zcode/skills", ".dsh/skills",
+                         ".gemini/skills", ".grok/skills", ".pi/agent/skills", ".config/opencode/skills"):
+            self.assertEqual((self.root / relative / "project-docs").resolve(), self.checkout / "skills" / "project-docs")
+        self.assertEqual(marker.read_text(), "keep")
+        self.assertFalse((self.root / "engine-calls.jsonl").exists())
 
 
 if __name__ == "__main__":

@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+- 安装器新增 ZCode、DeepSeek Harness（DSH）、Gemini CLI、xAI Grok Build、pi coding agent 和 OpenCode，统一支持安装、升级、依赖同步、诊断、卸载及旧名迁移；增加 `--host all` 管理全部八个宿主，默认及 `both` 保持只管理 Codex、Claude Code。遵循官方用户级 Skill 目录，支持 `DSH_HOME`、`PI_CODING_AGENT_DIR`、`XDG_CONFIG_HOME`；更新入口显式传递当前宿主，保留冲突检查和共享引擎。补齐隔离生命周期、更新转发、冲突与目录覆盖回归，README 增加官方规范来源、调用方式及真实宿主会话尚未验证的边界。
+- 安装、升级和卸载前预检所有选定 Skill 根目录及其现有父路径；根路径被普通文件或悬空链接占用时，在写入偏好标记、安装引擎或修改前序宿主链接前退出，避免 `--host all` 部分安装或卸载；有效的目录软链接继续支持。
 - 将三个文档与绘图能力整理为 `project-docs` Skill 集合：增加统一入口，按需求选择或组合 `project-docs-api`、`project-docs-diagram` 和 `project-docs-overview`；四个入口统一位于 `skills/`，继续共用生成脚本、图形引擎与四个文档模板。
 - 安装器在 Codex、Claude Code 两端迁移本仓库拥有的 `understand-docs`、`understand-arch`、`understand-project` 及历史名称链接，包括相对链接和目录移动后失效的链接；保留无关路径，并在任一新入口冲突时阻止部分迁移。旧调用名需改用新名称，现有渲染器配置与缓存路径继续有效。
 - 新增 `install.sh --update` 统一升级集合、三个子 Skill 和锁定版本的绘图 CLI，`--update-deps` 可单独同步依赖；自更新只快进当前跟踪分支，保护本地改动并拒绝 detached HEAD、无上游及分歧历史。受管入口在新版准备成功后切换，保留显式 CLI 覆盖及旧版本；升级时的 `--no-engines` 保持原自动安装偏好。

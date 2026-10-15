@@ -36,7 +36,7 @@ def update(source, arguments):
 def main(argv=None):
     require_python()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", choices=("codex", "claude", "both"), default="both")
+    parser.add_argument("--host", choices=("codex", "claude", "zcode", "dsh", "gemini", "grok", "pi", "opencode", "both", "all"), default="both")
     parser.add_argument("--engine", choices=("mermaid", "plantuml", "drawio", "archify"), action="append")
     parser.add_argument("--no-engines", action="store_true")
     args = parser.parse_args(argv)

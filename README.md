@@ -1,6 +1,6 @@
 # Project Docs
 
-面向 Codex 和 Claude Code 的项目文档 Skill 集合。`project-docs` 是统一入口，根据需求选择或组合三个专用能力：`project-docs-api` 生成接口文档，`project-docs-diagram` 生成和校验技术图，`project-docs-overview` 生成项目介绍、功能说明与开发者上手手册。两个宿主共用同一份仓库与渲染引擎安装。
+面向 Codex、Claude Code、ZCode、DeepSeek Harness（DSH）、Gemini CLI、Grok Build、pi 和 OpenCode 的项目文档 Skill 集合。`project-docs` 是统一入口，根据需求选择或组合三个专用能力：`project-docs-api` 生成接口文档，`project-docs-diagram` 生成和校验技术图，`project-docs-overview` 生成项目介绍、功能说明与开发者上手手册。所有宿主共用同一份仓库与渲染引擎安装。
 
 当前开发版本：[0.5.0](VERSION)（尚未发布）。改动记录见[变更日志](CHANGELOG.md)。
 
@@ -14,11 +14,13 @@
    bash install.sh
    ```
 
-2. 检查 Skill 入口和四个引擎，再重启或刷新 Codex／Claude Code 的 Skill 发现：
+2. 检查 Skill 入口和四个引擎，再重启或刷新宿主的 Skill 发现：
 
    ```bash
    bash install.sh --doctor
    ```
+
+   以上默认管理 Codex、Claude Code。其他宿主在安装和诊断时均加相同的 `--host`，例如 `bash install.sh --host zcode` 和 `bash install.sh --doctor --host zcode`；全部八个宿主使用 `--host all`。完整目录与加载规范见下方[宿主支持](#宿主支持)。
 
 3. 直接描述目标，或显式点名 Skill：
 
@@ -103,14 +105,48 @@ HTML 是 Archify 的交互展示文件；其余三种引擎的 HTML 不是本项
 | `bash install.sh --engine drawio` | 两个宿主安装 Skill；只补齐 draw.io。`--engine` 可重复指定 |
 | `bash install.sh --no-engines` | 只安装 Skill，并记录“不要自动安装引擎”的选择 |
 | `bash install.sh --host claude --engine mermaid` | 只为 Claude Code 安装 Skill，只补齐 Mermaid |
+| `bash install.sh --host all` | 为全部八个宿主安装四个 Skill；共用同一套绘图引擎 |
+| `bash install.sh --host opencode --no-engines` | 只为 OpenCode 安装四个 Skill，跳过绘图引擎 |
 | `bash install.sh --doctor` | 检查两个宿主的 Skill 链接和四个引擎；可配合 `--host`、`--engine`、`--no-engines` 缩小检查范围 |
 | `bash install.sh --update` | 快进更新当前跟踪分支，重新安装集合与三个子 Skill，并同步四个绘图 CLI 到新版集合锁定的版本 |
 | `bash install.sh --update-deps` | 不拉取仓库，只同步当前集合声明的绘图 CLI 与 Skill 链接 |
 | `bash install.sh --update --no-engines` | 仅更新集合及三个子 Skill，保留原有引擎自动安装偏好 |
+| `bash install.sh --uninstall --host all` | 从八个宿主移除本仓库拥有的 Skill 链接，保留共享引擎 |
 
-`--host codex` 只管理 Codex，`--host claude` 只管理 Claude Code，默认 `--host both`。普通安装使用 `--no-engines` 后，后续画图时 Skill 也不会擅自补装；再次显式运行带 `--engine` 的安装命令可解除这一选择。已装好的引擎会复用，无需每次重新安装。
+`--host` 接受 `codex`、`claude`、`zcode`、`dsh`、`gemini`、`grok`、`pi`、`opencode`、`both`、`all`。默认及 `both` 仍只管理 Codex、Claude Code；`all` 显式选择全部八个宿主。该选项适用于安装、升级、依赖同步、诊断和卸载；后续管理时使用与安装时相同的宿主选择。普通安装使用 `--no-engines` 后，后续画图时 Skill 也不会擅自补装；再次显式运行带 `--engine` 的安装命令可解除这一选择。已装好的引擎会复用，无需每次重新安装。
 
-统一升级使用 `bash install.sh --update`，也可在 Codex 中说“使用 project-docs 更新本集合及依赖”。升级读取当前 Git 分支的跟踪上游，不自动切换分支；本地有未提交或未跟踪文件、处于 detached HEAD、未配置上游或无法快进时会停止，不自动暂存、重置或覆盖本地改动。仓库更新成功后，用新版安装器同步链接与依赖；若后续依赖步骤失败，会明确返回失败，可解决原因后运行 `bash install.sh --update-deps` 重试。
+### 宿主支持
+
+2026-10-15 核对的官方加载规范如下。每个目标目录下软链接四个 Skill 目录，形成 `<skill-name>/SKILL.md` 布局，解析到本仓库的 `skills/`；脚本、引用和模板仍从真实 Skill 目录解析。安装器不依赖宿主 CLI，也不安装或升级宿主软件。
+
+| 宿主 / `--host` | 本安装器管理的用户级目录 | 官方规范与加载方式 |
+|---|---|---|
+| Codex / `codex` | `${CODEX_HOME:-~/.codex}/skills`（沿用现有安装位置） | [Codex Skills](https://developers.openai.com/codex/skills/)；自然语言或 `$project-docs` |
+| Claude Code / `claude` | `${CLAUDE_HOME:-~/.claude}/skills` | [Claude Code Skills](https://code.claude.com/docs/en/skills)；自然语言或 `/project-docs` |
+| ZCode / `zcode` | `~/.zcode/skills` | [ZCode Skill](https://zcode.z.ai/cn/docs/skill)；设置 → 技能中刷新并启用，支持 `$project-docs` |
+| DeepSeek Harness / `dsh` | `${DSH_HOME:-~/.dsh}/skills` | [官方 Skills 子系统](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/skills.md)；一层目录包含 `SKILL.md`，由文件系统 provider 发现、`skill` 工具加载 |
+| Gemini CLI / `gemini` | `~/.gemini/skills` | [Gemini CLI Agent Skills](https://geminicli.com/docs/cli/skills/)；`/skills list` 检查，`/skills reload` 刷新，按宿主提示确认激活 |
+| Grok Build / `grok` | `~/.grok/skills` | [xAI 官方 Skills 指南](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/08-skills.md)；`grok inspect` 检查，支持 `/project-docs` |
+| pi coding agent / `pi` | `${PI_CODING_AGENT_DIR:-~/.pi/agent}/skills` | [pi 官方 Skills 文档](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/skills.md)；新会话发现，支持 `/skill:project-docs` |
+| OpenCode / `opencode` | `${XDG_CONFIG_HOME:-~/.config}/opencode/skills` | [OpenCode Agent Skills](https://opencode.ai/docs/skills/)；从 YAML `name`、`description` 建立目录，经原生 `skill` 工具加载 |
+
+pi 原仓库 `badlogic/pi-mono` 已迁移到 `earendil-works/pi`，见[作者说明](https://mariozechner.at/posts/2026-04-08-ive-sold-out/)；`mariozechner/pi-coding-agent` 在本次核对时返回 404。Grok 适配对象是 [Grok Build](https://grok.com/build)，不涵盖第三方同名 `grok-cli` 或云端聊天的本机目录访问。
+
+多个宿主还支持 `.agents/skills` 等兼容路径；本安装器只管理上表目录，不扫描或清理其他来源。同名 Skill 可能被工作区、兼容目录或禁用配置遮蔽，应在宿主里核对实际来源。`--doctor` 验证本集合的链接、版本、旧链接和所选引擎，**不证明**宿主已启用、发现或执行 Skill；安装、卸载后需刷新或新建会话。现有的权限、信任和激活确认仍由各宿主管理。
+
+新增宿主已覆盖隔离目录中的安装、幂等、升级转发、诊断、卸载、旧名迁移、路径冲突和 DSH／pi／XDG 目录覆盖回归；尚未逐一运行真实宿主会话。仅提供本机文件的安装适配，不保证云端或远程沙箱能读取本机路径。
+
+例如只管理 pi：
+
+```bash
+bash install.sh --host pi --no-engines
+bash install.sh --doctor --host pi --no-engines
+bash install.sh --update --host pi --no-engines
+bash install.sh --update-deps --host pi --no-engines
+bash install.sh --uninstall --host pi
+```
+
+统一升级使用 `bash install.sh --update --host <宿主>`，也可在当前宿主中说“使用 project-docs 更新本集合及依赖”，由 Skill 显式传入对应 `--host`。升级读取当前 Git 分支的跟踪上游，不自动切换分支；本地有未提交或未跟踪文件、处于 detached HEAD、未配置上游或无法快进时会停止，不自动暂存、重置或覆盖本地改动。仓库更新成功后，用新版安装器同步链接与依赖；若后续依赖步骤失败，会明确返回失败，可解决原因后运行 `bash install.sh --update-deps --host <宿主>` 重试。
 
 三个子 Skill 随同一仓库更新。四个绘图 CLI 按本集合锁定并验收的版本同步，保留下载校验；新版准备成功后才切换受管入口，旧版本目录保留。macOS 的 draw.io 更新安装在共享管理目录，Linux 使用现有 apt 安装流程，可能需要系统权限。`*_OFFICIAL_CLI` 显式指定的工具保留原路径并提示由外部管理；管理目录中的自定义入口也不会被强行覆盖。PDLC、understand-anything 和 CodeGraph 属于按需使用的外部能力，不作为本集合必装依赖，也不扫描升级用户的其他全局 Skill 或软件。
 
@@ -131,7 +167,7 @@ HTML 是 Archify 的交互展示文件；其余三种引擎的 HTML 不是本项
 
 ## 使用 Project Docs API
 
-打开目标项目，在 Codex 或 Claude Code 中描述要生成的文档即可。例如：
+打开目标项目，在上表任一宿主中描述要生成的文档即可。例如：
 
 ```text
 使用 $project-docs-api 为当前项目生成完整 API 文档，包含请求、响应、枚举说明、Postman 集合和 cURL 示例。

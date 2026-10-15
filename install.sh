@@ -4,6 +4,15 @@ set -euo pipefail
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 CODEX_SKILLS_DIR="${CODEX_HOME:-${HOME}/.codex}/skills"
 CLAUDE_SKILLS_DIR="${CLAUDE_HOME:-${HOME}/.claude}/skills"
+ZCODE_SKILLS_DIR="${HOME}/.zcode/skills"
+DSH_SKILLS_DIR="${DSH_HOME:-${HOME}/.dsh}/skills"
+GEMINI_SKILLS_DIR="${HOME}/.gemini/skills"
+GROK_SKILLS_DIR="${HOME}/.grok/skills"
+PI_SKILLS_DIR="${PI_CODING_AGENT_DIR:-${HOME}/.pi/agent}/skills"
+case "$PI_SKILLS_DIR" in
+  "~/"*) PI_SKILLS_DIR="$HOME/${PI_SKILLS_DIR#\~/}" ;;
+esac
+OPENCODE_SKILLS_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/opencode/skills"
 PYTHON_BIN="${UNDERSTAND_PYTHON:-python3}"
 RENDERER_HOME="${UNDERSTAND_RENDERER_HOME:-${HOME}/.local/share/understand-skills/renderers}"
 SKILL_NAMES=(project-docs project-docs-api project-docs-diagram project-docs-overview)
@@ -24,11 +33,15 @@ usage() {
 Project Docs skill collection installer
 
 Usage:
-  bash install.sh [--host codex|claude|both] [--engine NAME ... | --no-engines]
-  bash install.sh --doctor [--host codex|claude|both] [--engine NAME ... | --no-engines]
-  bash install.sh --uninstall [--host codex|claude|both]
-  bash install.sh --update [--host codex|claude|both] [--engine NAME ... | --no-engines]
-  bash install.sh --update-deps [--host codex|claude|both] [--engine NAME ... | --no-engines]
+  bash install.sh [--host HOST] [--engine NAME ... | --no-engines]
+  bash install.sh --doctor [--host HOST] [--engine NAME ... | --no-engines]
+  bash install.sh --uninstall [--host HOST]
+  bash install.sh --update [--host HOST] [--engine NAME ... | --no-engines]
+  bash install.sh --update-deps [--host HOST] [--engine NAME ... | --no-engines]
+
+HOST: codex, claude, zcode, dsh, gemini, grok, pi, opencode, both, all.
+both (default) selects Codex and Claude Code; all selects all eight hosts.
+grok targets xAI Grok Build; pi targets the pi coding agent.
 
 Default: install the unified entry and three specialist skills for Codex and Claude Code, and install all missing
 Mermaid, PlantUML, draw.io, and Archify renderers. --engine installs/checks only
@@ -64,7 +77,7 @@ while [[ $# -gt 0 ]]; do
     --update) ACTION=update; ACTION_COUNT=$((ACTION_COUNT + 1)); shift ;;
     --update-deps) UPDATE_DEPS=true; ACTION_COUNT=$((ACTION_COUNT + 1)); shift ;;
     --host)
-      [[ $# -ge 2 && "$2" =~ ^(codex|claude|both)$ ]] || { usage >&2; exit 2; }
+      [[ $# -ge 2 && "$2" =~ ^(codex|claude|zcode|dsh|gemini|grok|pi|opencode|both|all)$ ]] || { usage >&2; exit 2; }
       HOST="$2"; shift 2 ;;
     --engine)
       [[ $# -ge 2 && "$2" =~ ^(mermaid|plantuml|drawio|archify)$ ]] || { usage >&2; exit 2; }
@@ -89,8 +102,14 @@ if [[ "$ACTION" == uninstall && ${#ENGINES[@]} -gt 0 ]]; then
 fi
 
 SKILLS_DIRS=()
-if [[ "$HOST" == codex || "$HOST" == both ]]; then SKILLS_DIRS+=("$CODEX_SKILLS_DIR"); fi
-if [[ "$HOST" == claude || "$HOST" == both ]]; then SKILLS_DIRS+=("$CLAUDE_SKILLS_DIR"); fi
+if [[ "$HOST" == codex || "$HOST" == both || "$HOST" == all ]]; then SKILLS_DIRS+=("$CODEX_SKILLS_DIR"); fi
+if [[ "$HOST" == claude || "$HOST" == both || "$HOST" == all ]]; then SKILLS_DIRS+=("$CLAUDE_SKILLS_DIR"); fi
+if [[ "$HOST" == zcode || "$HOST" == all ]]; then SKILLS_DIRS+=("$ZCODE_SKILLS_DIR"); fi
+if [[ "$HOST" == dsh || "$HOST" == all ]]; then SKILLS_DIRS+=("$DSH_SKILLS_DIR"); fi
+if [[ "$HOST" == gemini || "$HOST" == all ]]; then SKILLS_DIRS+=("$GEMINI_SKILLS_DIR"); fi
+if [[ "$HOST" == grok || "$HOST" == all ]]; then SKILLS_DIRS+=("$GROK_SKILLS_DIR"); fi
+if [[ "$HOST" == pi || "$HOST" == all ]]; then SKILLS_DIRS+=("$PI_SKILLS_DIR"); fi
+if [[ "$HOST" == opencode || "$HOST" == all ]]; then SKILLS_DIRS+=("$OPENCODE_SKILLS_DIR"); fi
 
 if [[ "$ACTION" == install || "$ACTION" == update ]]; then
   if ! command -v "$PYTHON_BIN" >/dev/null 2>&1 ||
@@ -125,6 +144,14 @@ fi
 # Check every selected host before installing engines or changing any skill link.
 if [[ "$ACTION" != doctor ]]; then
   for skills_dir in "${SKILLS_DIRS[@]}"; do
+    ancestor="$skills_dir"
+    while [[ ! -e "$ancestor" && ! -L "$ancestor" ]]; do
+      ancestor="$(dirname "$ancestor")"
+    done
+    if [[ ! -d "$ancestor" ]]; then
+      echo "Error: not a usable skill directory: $ancestor (for $skills_dir)" >&2
+      exit 1
+    fi
     for index in "${!SKILL_NAMES[@]}"; do
       target="$skills_dir/${SKILL_NAMES[$index]}"
       if ! same_install "$target" "${SOURCES[$index]}" && [[ -e "$target" || -L "$target" ]]; then
