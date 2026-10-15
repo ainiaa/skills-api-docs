@@ -363,19 +363,22 @@ def main(argv=None):
     if args.auto and marker.is_file():
         print("Renderer auto installation is disabled by --no-engines", file=sys.stderr)
         return 1
-    try:
-        for engine in selected:
+    status = 0
+    for engine in selected:
+        try:
             path = find_engine(engine) if args.doctor else installer.ensure(engine, update=args.update)
             if not path:
                 raise RuntimeError(f"{engine} is not installed; run bash install.sh --engine {engine}")
             retained = args.update and os.environ.get(f"{engine.upper()}_OFFICIAL_CLI")
             print(f"{engine}: {'retained explicit CLI override ' if retained else ''}{path}")
-    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
-        print(f"Renderer setup failed: {error}", file=sys.stderr)
-        return 1
+        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            print(f"Renderer setup failed: {error}", file=sys.stderr)
+            if not args.doctor:
+                return 1
+            status = 1
     if not args.doctor and not args.auto:
         marker.unlink(missing_ok=True)
-    return 0
+    return status
 
 
 if __name__ == "__main__":

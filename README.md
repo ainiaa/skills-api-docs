@@ -125,16 +125,20 @@ HTML 是 Archify 的交互展示文件；其余三种引擎的 HTML 不是本项
 | Claude Code / `claude` | `${CLAUDE_HOME:-~/.claude}/skills` | [Claude Code Skills](https://code.claude.com/docs/en/skills)；自然语言或 `/project-docs` |
 | ZCode / `zcode` | `~/.zcode/skills` | [ZCode Skill](https://zcode.z.ai/cn/docs/skill)；设置 → 技能中刷新并启用，支持 `$project-docs` |
 | DeepSeek Harness / `dsh` | `${DSH_HOME:-~/.dsh}/skills` | [官方 Skills 子系统](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/skills.md)；一层目录包含 `SKILL.md`，由文件系统 provider 发现、`skill` 工具加载 |
-| Gemini CLI / `gemini` | `~/.gemini/skills` | [Gemini CLI Agent Skills](https://geminicli.com/docs/cli/skills/)；`/skills list` 检查，`/skills reload` 刷新，按宿主提示确认激活 |
-| Grok Build / `grok` | `~/.grok/skills` | [xAI 官方 Skills 指南](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/08-skills.md)；`grok inspect` 检查，支持 `/project-docs` |
+| Gemini CLI / `gemini` | `${GEMINI_CLI_HOME:-~}/.gemini/skills` | [Gemini CLI Agent Skills](https://geminicli.com/docs/cli/skills/)；`/skills list` 检查，`/skills reload` 刷新，按宿主提示确认激活 |
+| Grok Build / `grok` | `${GROK_HOME:-~/.grok}/skills` | [xAI 官方 Skills 指南](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/08-skills.md)；`grok inspect` 检查，支持 `/project-docs` |
 | pi coding agent / `pi` | `${PI_CODING_AGENT_DIR:-~/.pi/agent}/skills` | [pi 官方 Skills 文档](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/skills.md)；新会话发现，支持 `/skill:project-docs` |
 | OpenCode / `opencode` | `${XDG_CONFIG_HOME:-~/.config}/opencode/skills` | [OpenCode Agent Skills](https://opencode.ai/docs/skills/)；从 YAML `name`、`description` 建立目录，经原生 `skill` 工具加载 |
 
 pi 原仓库 `badlogic/pi-mono` 已迁移到 `earendil-works/pi`，见[作者说明](https://mariozechner.at/posts/2026-04-08-ive-sold-out/)；`mariozechner/pi-coding-agent` 在本次核对时返回 404。Grok 适配对象是 [Grok Build](https://grok.com/build)，不涵盖第三方同名 `grok-cli` 或云端聊天的本机目录访问。
 
-多个宿主还支持 `.agents/skills` 等兼容路径；本安装器只管理上表目录，不扫描或清理其他来源。同名 Skill 可能被工作区、兼容目录或禁用配置遮蔽，应在宿主里核对实际来源。`--doctor` 验证本集合的链接、版本、旧链接和所选引擎，**不证明**宿主已启用、发现或执行 Skill；安装、卸载后需刷新或新建会话。现有的权限、信任和激活确认仍由各宿主管理。
+`GEMINI_CLI_HOME` 覆盖主目录基址，仍需追加 `.gemini/skills`，见 [Gemini 原生路径实现](https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/utils/paths.ts)；`GROK_HOME` 直接覆盖 `.grok` 目录，见 [Grok 用户状态目录说明](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/22-permissions-and-safety.md)。DSH 的空白 `DSH_HOME` 按未设置处理，并展开 `~`、`~/`、`~\`，与[原生路径实现](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/util/home-paths/src/index.ts)一致。OpenCode 只采用绝对 `XDG_CONFIG_HOME`；相对值无效时回退到 `~/.config`，遵循 [XDG 规范](https://specifications.freedesktop.org/basedir/latest/)。升级、诊断、卸载须使用与安装时相同的环境变量。
 
-新增宿主已覆盖隔离目录中的安装、幂等、升级转发、诊断、卸载、旧名迁移、路径冲突和 DSH／pi／XDG 目录覆盖回归；尚未逐一运行真实宿主会话。仅提供本机文件的安装适配，不保证云端或远程沙箱能读取本机路径。
+多个宿主还支持 `.agents/skills` 等兼容路径；本安装器只管理上表目录，不扫描或清理其他来源。同名 Skill 可能被工作区、兼容目录或禁用配置遮蔽，应在宿主里核对实际来源。`--doctor` 汇总检查本集合的链接、可读且非空的 `SKILL.md`、非空版本文件、旧链接和所选引擎；某个引擎缺失后仍检查其余引擎与全部 Skill。诊断失败返回非零状态，**不证明**宿主已启用、发现或执行 Skill；安装、卸载后需刷新或新建会话。现有的权限、信任和激活确认仍由各宿主管理。
+
+卸载按软链接的物理目标识别本仓库归属；即使源 Skill 目录已丢失，仍可清理本仓库拥有的失效链接。含软链接和 `..` 的路径按实际文件系统解析，不把指向其他目录的链接当成本仓库入口；无关目录和链接继续保留。
+
+新增宿主已覆盖隔离目录中的安装、幂等、升级转发、诊断、卸载、旧名迁移、路径冲突和原生目录覆盖回归。2026-10-15 还在临时用户目录中，用 Gemini CLI 0.64.0 的 `skills list`、Grok Build 1.0.52 的 `inspect --json` 和 pi 1.2.0 的原生加载器验证了安装后四个 Skill 均可见、卸载后均消失；未调用模型或改动真实用户配置。ZCode、DSH、OpenCode 的真实宿主加载及六个宿主的模型执行仍未验证；云端或远程沙箱也不保证能读取本机路径。
 
 例如只管理 pi：
 
@@ -146,7 +150,7 @@ bash install.sh --update-deps --host pi --no-engines
 bash install.sh --uninstall --host pi
 ```
 
-统一升级使用 `bash install.sh --update --host <宿主>`，也可在当前宿主中说“使用 project-docs 更新本集合及依赖”，由 Skill 显式传入对应 `--host`。升级读取当前 Git 分支的跟踪上游，不自动切换分支；本地有未提交或未跟踪文件、处于 detached HEAD、未配置上游或无法快进时会停止，不自动暂存、重置或覆盖本地改动。仓库更新成功后，用新版安装器同步链接与依赖；若后续依赖步骤失败，会明确返回失败，可解决原因后运行 `bash install.sh --update-deps --host <宿主>` 重试。
+统一升级使用 `bash install.sh --update --host <宿主>`，也可在当前宿主中说“使用 project-docs 更新本集合及依赖”，由 Skill 显式传入对应 `--host`。升级读取当前 Git 分支的跟踪上游，不自动切换分支；本地有未提交或未跟踪文件、处于 detached HEAD、未配置上游或无法快进时会停止，不自动暂存、重置或覆盖本地改动。仓库更新成功后，用新版安装器同步链接与依赖；若后续依赖步骤失败，会明确返回失败，并输出可直接执行的 `--update-deps` 重试命令，保留原 `--host`、引擎选择和带空格的仓库路径。
 
 三个子 Skill 随同一仓库更新。四个绘图 CLI 按本集合锁定并验收的版本同步，保留下载校验；新版准备成功后才切换受管入口，旧版本目录保留。macOS 的 draw.io 更新安装在共享管理目录，Linux 使用现有 apt 安装流程，可能需要系统权限。`*_OFFICIAL_CLI` 显式指定的工具保留原路径并提示由外部管理；管理目录中的自定义入口也不会被强行覆盖。PDLC、understand-anything 和 CodeGraph 属于按需使用的外部能力，不作为本集合必装依赖，也不扫描升级用户的其他全局 Skill 或软件。
 

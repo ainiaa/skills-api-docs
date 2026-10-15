@@ -1,4 +1,5 @@
 import os
+import io
 import shlex
 import subprocess
 import sys
@@ -8,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from engine_paths import find_engine
-from install_renderers import DRAWIO_DEB_SHA256, DRAWIO_VERSION, MERMAID_VERSION, PLANTUML_VERSION, RendererInstaller
+from install_renderers import DRAWIO_DEB_SHA256, DRAWIO_VERSION, MERMAID_VERSION, PLANTUML_VERSION, RendererInstaller, main
 from python_runtime import require_python
 
 
@@ -277,6 +278,19 @@ class RendererInstallerTests(unittest.TestCase):
         download.assert_called_once()
         self.assertIn(DRAWIO_VERSION, download.call_args.args[0])
         self.assertTrue(install.call_args.args[0].endswith("drawio.deb"))
+
+    def test_doctor_reports_all_missing_engines_and_available_engines(self):
+        output, errors = io.StringIO(), io.StringIO()
+        def find(engine):
+            return "/existing/plantuml" if engine == "plantuml" else None
+        with patch("install_renderers.find_engine", side_effect=find), \
+             patch.object(RendererInstaller, "ensure") as install, \
+             patch("sys.stdout", output), patch("sys.stderr", errors):
+            self.assertEqual(main(["--doctor"]), 1)
+        self.assertIn("plantuml: /existing/plantuml", output.getvalue())
+        for engine in ("mermaid", "drawio", "archify"):
+            self.assertIn(engine + " is not installed", errors.getvalue())
+        install.assert_not_called()
 
 
 if __name__ == "__main__":

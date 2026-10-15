@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPOSITORY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+REPOSITORY="$(cd -P -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 SOURCE="$REPOSITORY/skills/project-docs-diagram"
 TARGET="${CODEX_HOME:-${HOME}/.codex}/skills/project-docs-diagram"
 OLD_NAMES=(understand-api-arch understand-arch)
@@ -9,16 +9,22 @@ OLD_SOURCES=("$REPOSITORY/skills/understand-api-arch" "$REPOSITORY/skills/unders
 
 same_install() {
   [[ -L "$TARGET" ]] || return 1
-  [[ "$(cd "$TARGET" 2>/dev/null && pwd -P)" == "$SOURCE" ]]
+  [[ "$(cd -P -- "$TARGET" 2>/dev/null && pwd -P)" == "$SOURCE" ]]
 }
 
 old_install() {
-  local target="$1" source="$2" link parent
+  local target="$1" source="$2" link parent suffix
   [[ -L "$target" ]] || return 1
   link="$(readlink "$target")"
   [[ "$link" == /* ]] || link="$(dirname "$target")/$link"
-  parent="$(cd "$(dirname "$link")" 2>/dev/null && pwd -P)" || return 1
-  [[ "$parent/$(basename "$link")" == "$source" ]]
+  parent="$(dirname "$link")"
+  suffix="$(basename "$link")"
+  while [[ ! -e "$parent" && ! -L "$parent" ]]; do
+    suffix="$(basename "$parent")/$suffix"
+    parent="$(dirname "$parent")"
+  done
+  parent="$(cd -P -- "$parent" 2>/dev/null && pwd -P)" || return 1
+  [[ "$parent/$suffix" == "$source" ]]
 }
 
 clean_old_links() {
@@ -51,12 +57,12 @@ case "${1:-}" in
     clean_old_links
     ;;
   --doctor)
-    if same_install && clean_old_links --check; then echo "project-docs-diagram is installed → $TARGET"; else
+    if same_install && [[ -f "$SOURCE/SKILL.md" && -r "$SOURCE/SKILL.md" && -s "$SOURCE/SKILL.md" ]] && clean_old_links --check; then echo "project-docs-diagram is installed → $TARGET"; else
       echo "project-docs-diagram is not cleanly linked to this checkout: $TARGET" >&2; exit 1
     fi
     ;;
   --uninstall)
-    if same_install; then rm "$TARGET"; echo "Uninstalled project-docs-diagram → $TARGET"
+    if same_install || old_install "$TARGET" "$SOURCE"; then rm "$TARGET"; echo "Uninstalled project-docs-diagram → $TARGET"
     elif [[ -e "$TARGET" || -L "$TARGET" ]]; then
       echo "Error: refusing to remove unrelated path: $TARGET" >&2; exit 1
     else

@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -31,7 +32,7 @@ class InstallTests(unittest.TestCase):
         self.environment = dict(os.environ, CODEX_HOME=str(self.codex_home),
                                 CLAUDE_HOME=str(self.claude_home), HOME=str(self.root),
                                 UNDERSTAND_RENDERER_HOME=str(self.root / "renderers"))
-        for variable in ("DSH_HOME", "PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME"):
+        for variable in ("DSH_HOME", "PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME", "GEMINI_CLI_HOME", "GROK_HOME"):
             self.environment.pop(variable, None)
 
     def host_directories(self):
@@ -45,6 +46,19 @@ class InstallTests(unittest.TestCase):
             "pi": self.root / ".pi" / "agent" / "skills",
             "opencode": self.root / ".config" / "opencode" / "skills",
         }
+
+    def linked_collection(self, relative=False):
+        collection = self.root / "collection"
+        collection.mkdir()
+        shutil.copy(INSTALLER, collection / "install.sh")
+        shutil.copy(REPOSITORY / "VERSION", collection / "VERSION")
+        shutil.copytree(REPOSITORY / "skills", collection / "skills")
+        for directory in self.host_directories().values():
+            directory.mkdir(parents=True)
+            for source in (collection / "skills").iterdir():
+                target = os.path.relpath(source, directory) if relative else source
+                (directory / source.name).symlink_to(target)
+        return collection
 
     def run_installer(self, *arguments, isolated=True):
         options = ["--host", "codex", "--no-engines"] if isolated else []
@@ -453,7 +467,8 @@ class InstallTests(unittest.TestCase):
         for directory in self.host_directories().values():
             directory.mkdir(parents=True)
             for target, source in self.legacy_links(directory).items():
-                target.symlink_to(os.path.relpath(source, directory))
+                target.symlink_to(os.path.relpath(source, directory.resolve()))
+                self.assertEqual(target.resolve(), source)
                 legacy.append(target)
         for action in ("--install", "--update-deps", "--doctor"):
             result = self.run_installer(action, "--host", "all", "--no-engines", isolated=False)
@@ -598,6 +613,117 @@ class InstallTests(unittest.TestCase):
                 self.assertEqual((shared / "project-docs").resolve(), REPOSITORY / "skills" / "project-docs")
         self.assertEqual(directory.readlink(), shared)
         self.assertEqual(list(shared.iterdir()), [])
+
+    def test_gemini_and_grok_native_home_overrides_apply_to_all_local_actions(self):
+        for host, variable, suffix in (("gemini", "GEMINI_CLI_HOME", ".gemini/skills"),
+                                       ("grok", "GROK_HOME", "skills")):
+            with self.subTest(host=host):
+                home = self.root / (host + " custom home")
+                self.environment[variable] = str(home)
+                options = ("--host", host, "--no-engines")
+                for action in ("--install", "--update-deps", "--doctor"):
+                    result = self.run_installer(action, *options, isolated=False)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual((home / suffix / "project-docs").resolve(), REPOSITORY / "skills" / "project-docs")
+                    self.assertFalse(self.host_directories()[host].exists())
+                self.assertEqual(self.run_installer("--uninstall", *options, isolated=False).returncode, 0)
+                self.assertFalse((home / suffix / "project-docs").is_symlink())
+
+    def test_dsh_home_uses_native_tilde_expansion_and_blank_fallback(self):
+        for value, directory in (("~/custom dsh home", self.root / "custom dsh home"),
+                                 ("~\\custom dsh home", self.root / "custom dsh home"),
+                                 ("~", self.root), (" \t ", self.root / ".dsh")):
+            with self.subTest(value=value):
+                self.environment["DSH_HOME"] = value
+                options = ("--host", "dsh", "--no-engines")
+                try:
+                    for action in ("--install", "--update-deps", "--doctor"):
+                        result = self.run_installer(action, *options, isolated=False)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual((directory / "skills" / "project-docs").resolve(), REPOSITORY / "skills" / "project-docs")
+                finally:
+                    self.run_installer("--uninstall", *options, isolated=False)
+
+    def test_relative_xdg_config_home_is_ignored_as_required_by_xdg(self):
+        self.environment["XDG_CONFIG_HOME"] = "relative config"
+        options = ("--host", "opencode", "--no-engines")
+        for action in ("--install", "--update-deps", "--doctor"):
+            result = self.run_installer(action, *options, isolated=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((self.host_directories()["opencode"] / "project-docs").resolve(), REPOSITORY / "skills" / "project-docs")
+            self.assertFalse((self.root / "relative config").exists())
+        self.assertEqual(self.run_installer("--uninstall", *options, isolated=False).returncode, 0)
+
+    def test_doctor_rejects_missing_skill_entries_and_version_file(self):
+        collection = self.linked_collection()
+        for fault in ("missing-skill", "empty-skill", "missing-version", "empty-version"):
+            with self.subTest(fault=fault):
+                file = collection / ("VERSION" if fault.endswith("version") else "skills/project-docs-api/SKILL.md")
+                original = file.read_bytes()
+                if fault.startswith("empty"):
+                    file.write_text("")
+                else:
+                    file.unlink()
+                try:
+                    result = subprocess.run(["bash", str(collection / "install.sh"), "--doctor", "--host", "all", "--no-engines"],
+                                            env=self.environment, capture_output=True, text=True)
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertIn("VERSION" if fault.endswith("version") else "SKILL.md", result.stderr)
+                finally:
+                    file.write_bytes(original)
+
+    def test_doctor_reports_skill_problems_even_when_renderer_check_fails(self):
+        fake_python = self.root / "failing renderer probe"
+        fake_python.write_text("#!/bin/sh\necho 'renderer probe failed' >&2\nexit 9\n")
+        fake_python.chmod(0o755)
+        self.environment["UNDERSTAND_PYTHON"] = str(fake_python)
+        result = self.run_installer("--doctor", "--host", "all", "--engine", "mermaid", isolated=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("renderer probe failed", result.stderr)
+        for directory in self.host_directories().values():
+            self.assertIn(str(directory / "project-docs"), result.stderr)
+        self.assertFalse((self.root / "renderers").exists())
+
+    def check_uninstall_with_missing_sources(self, relative=False, entire_group=False):
+        collection = self.linked_collection(relative=relative)
+        shutil.rmtree(collection / "skills" if entire_group else collection / "skills/project-docs-api")
+        result = subprocess.run(["bash", str(collection / "install.sh"), "--uninstall", "--host", "all"],
+                                env=self.environment, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for directory in self.host_directories().values():
+            self.assertEqual(list(directory.iterdir()), [])
+
+    def test_uninstall_removes_owned_broken_absolute_links(self):
+        self.check_uninstall_with_missing_sources()
+
+    def test_uninstall_removes_owned_broken_relative_links(self):
+        self.check_uninstall_with_missing_sources(relative=True)
+
+    def test_uninstall_removes_owned_links_when_entire_skill_group_is_missing(self):
+        self.check_uninstall_with_missing_sources(entire_group=True)
+
+    def test_uninstall_removes_owned_relative_links_when_entire_skill_group_is_missing(self):
+        self.check_uninstall_with_missing_sources(relative=True, entire_group=True)
+
+    def test_symlink_with_parent_traversal_is_not_mistaken_for_owned_source(self):
+        collection = self.linked_collection()
+        actual = self.root / "actual"
+        (actual / "nested").mkdir(parents=True)
+        foreign = actual / "collection/skills/project-docs"
+        foreign.mkdir(parents=True)
+        (foreign / "SKILL.md").write_text("keep")
+        redirect = self.root / "redirect"
+        redirect.symlink_to(actual / "nested", target_is_directory=True)
+        self.suite_target.unlink()
+        self.suite_target.symlink_to(redirect / "../collection/skills/project-docs")
+        self.assertEqual(self.suite_target.resolve(), foreign.resolve())
+        for action in ("--doctor", "--uninstall"):
+            with self.subTest(action=action):
+                result = subprocess.run(["bash", str(collection / "install.sh"), action, "--host", "codex", "--no-engines"],
+                                        env=self.environment, capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertTrue(self.suite_target.is_symlink())
+                self.assertEqual((foreign / "SKILL.md").read_text(), "keep")
 
 
 if __name__ == "__main__":

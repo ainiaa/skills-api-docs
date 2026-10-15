@@ -1,5 +1,6 @@
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -54,7 +55,7 @@ class UpdateTests(unittest.TestCase):
                                 UNDERSTAND_PYTHON=sys.executable,
                                 UNDERSTAND_RENDERER_HOME=str(self.root / "renderers"),
                                 UPDATE_TEST_LOG=str(self.root / "engine-calls.jsonl"))
-        for variable in ("DSH_HOME", "PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME"):
+        for variable in ("DSH_HOME", "PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME", "GEMINI_CLI_HOME", "GROK_HOME"):
             self.environment.pop(variable, None)
 
     @staticmethod
@@ -204,6 +205,35 @@ class UpdateTests(unittest.TestCase):
             self.assertEqual((self.root / relative / "project-docs").resolve(), self.checkout / "skills" / "project-docs")
         self.assertEqual(marker.read_text(), "keep")
         self.assertFalse((self.root / "engine-calls.jsonl").exists())
+
+    def test_update_keeps_native_gemini_and_grok_home_overrides(self):
+        self.advance_remote()
+        for host, variable, suffix in (("gemini", "GEMINI_CLI_HOME", ".gemini/skills"),
+                                       ("grok", "GROK_HOME", "skills")):
+            with self.subTest(host=host):
+                home = self.root / (host + " custom home")
+                self.environment[variable] = str(home)
+                result = self.run_update("--host", host, "--no-engines")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual((home / suffix / "project-docs").resolve(), self.checkout / "skills/project-docs")
+                self.assertFalse((self.root / (".gemini" if host == "gemini" else ".grok")).exists())
+
+    def test_dependency_failure_provides_retry_that_keeps_host_and_engine(self):
+        self.advance_remote()
+        self.environment["UPDATE_TEST_FAIL"] = "1"
+        result = self.run_update("--host", "grok", "--engine", "mermaid")
+        self.assertNotEqual(result.returncode, 0)
+        retry = result.stderr.split("; rerun ", 1)[1].rsplit(" after resolving", 1)[0]
+        arguments = shlex.split(retry)
+        self.assertIn("--host", arguments)
+        self.assertEqual(arguments[arguments.index("--host") + 1], "grok")
+        self.assertEqual(arguments[arguments.index("--engine") + 1], "mermaid")
+        self.environment["UPDATE_TEST_FAIL"] = "0"
+        recovered = subprocess.run(arguments, cwd=self.root, env=self.environment, capture_output=True, text=True)
+        self.assertEqual(recovered.returncode, 0, recovered.stderr)
+        self.assertEqual((self.root / ".grok/skills/project-docs").resolve(), self.checkout / "skills/project-docs")
+        self.assertFalse((self.root / "codex/skills").exists())
+        self.assertFalse((self.root / "claude/skills").exists())
 
 
 if __name__ == "__main__":

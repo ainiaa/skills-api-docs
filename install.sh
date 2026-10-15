@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+SOURCE_DIR="$(cd -P -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 CODEX_SKILLS_DIR="${CODEX_HOME:-${HOME}/.codex}/skills"
 CLAUDE_SKILLS_DIR="${CLAUDE_HOME:-${HOME}/.claude}/skills"
 ZCODE_SKILLS_DIR="${HOME}/.zcode/skills"
-DSH_SKILLS_DIR="${DSH_HOME:-${HOME}/.dsh}/skills"
-GEMINI_SKILLS_DIR="${HOME}/.gemini/skills"
-GROK_SKILLS_DIR="${HOME}/.grok/skills"
+DSH_SKILLS_DIR="${HOME}/.dsh/skills"
+if [[ "${DSH_HOME:-}" =~ [^[:space:]] ]]; then DSH_SKILLS_DIR="$DSH_HOME/skills"; fi
+case "$DSH_SKILLS_DIR" in
+  "~/"*|"~\\"*) DSH_SKILLS_DIR="$HOME/${DSH_SKILLS_DIR:2}" ;;
+esac
+GEMINI_SKILLS_DIR="${GEMINI_CLI_HOME:-${HOME}}/.gemini/skills"
+GROK_SKILLS_DIR="${GROK_HOME:-${HOME}/.grok}/skills"
 PI_SKILLS_DIR="${PI_CODING_AGENT_DIR:-${HOME}/.pi/agent}/skills"
 case "$PI_SKILLS_DIR" in
   "~/"*) PI_SKILLS_DIR="$HOME/${PI_SKILLS_DIR#\~/}" ;;
 esac
-OPENCODE_SKILLS_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/opencode/skills"
+OPENCODE_SKILLS_DIR="${HOME}/.config/opencode/skills"
+if [[ "${XDG_CONFIG_HOME:-}" == /* ]]; then OPENCODE_SKILLS_DIR="$XDG_CONFIG_HOME/opencode/skills"; fi
 PYTHON_BIN="${UNDERSTAND_PYTHON:-python3}"
 RENDERER_HOME="${UNDERSTAND_RENDERER_HOME:-${HOME}/.local/share/understand-skills/renderers}"
 SKILL_NAMES=(project-docs project-docs-api project-docs-diagram project-docs-overview)
@@ -55,18 +60,24 @@ EOF
 same_install() {
   local target="$1" source="$2" resolved
   [[ -L "$target" ]] || return 1
-  resolved="$(cd "$target" 2>/dev/null && pwd -P)" || return 1
+  resolved="$(cd -P -- "$target" 2>/dev/null && pwd -P)" || return 1
   [[ "$resolved" == "$source" ]]
 }
 
 old_install() {
-  local target="$1" source="$2" link parent
+  local target="$1" source="$2" link parent suffix
   [[ -L "$target" ]] || return 1
   link="$(readlink "$target")"
   [[ "$link" == /* ]] || link="$(dirname "$target")/$link"
-  # Old skill directories may have moved; resolve the parent without requiring the leaf.
-  parent="$(cd "$(dirname "$link")" 2>/dev/null && pwd -P)" || return 1
-  [[ "$parent/$(basename "$link")" == "$source" ]]
+  # Resolve existing ancestors so owned links remain removable after source loss.
+  parent="$(dirname "$link")"
+  suffix="$(basename "$link")"
+  while [[ ! -e "$parent" && ! -L "$parent" ]]; do
+    suffix="$(basename "$parent")/$suffix"
+    parent="$(dirname "$parent")"
+  done
+  parent="$(cd -P -- "$parent" 2>/dev/null && pwd -P)" || return 1
+  [[ "$parent/$suffix" == "$source" ]]
 }
 
 while [[ $# -gt 0 ]]; do
@@ -154,7 +165,8 @@ if [[ "$ACTION" != doctor ]]; then
     fi
     for index in "${!SKILL_NAMES[@]}"; do
       target="$skills_dir/${SKILL_NAMES[$index]}"
-      if ! same_install "$target" "${SOURCES[$index]}" && [[ -e "$target" || -L "$target" ]]; then
+      if ! same_install "$target" "${SOURCES[$index]}" &&
+         ! old_install "$target" "${SOURCES[$index]}" && [[ -e "$target" || -L "$target" ]]; then
         echo "Error: refusing to replace unrelated path: $target" >&2
         exit 1
       fi
@@ -172,10 +184,13 @@ if [[ "$ACTION" == update ]]; then
   if [[ ${#ENGINES[@]} -gt 0 ]]; then update_args+=("${renderer_args[@]}"); fi
   exec "$PYTHON_BIN" "$SOURCE_DIR/scripts/update_project_docs.py" "${update_args[@]}"
 fi
+renderer_status=0
 if [[ "$ACTION" != uninstall && "$NO_ENGINES" == false ]]; then
   if [[ "$ACTION" == doctor ]]; then renderer_args+=(--doctor); fi
   if [[ "$UPDATE_DEPS" == true ]]; then renderer_args+=(--update); fi
-  if [[ ${#renderer_args[@]} -gt 0 ]]; then
+  if [[ "$ACTION" == doctor ]]; then
+    "$PYTHON_BIN" "$SOURCE_DIR/scripts/install_renderers.py" "${renderer_args[@]}" || renderer_status=1
+  elif [[ ${#renderer_args[@]} -gt 0 ]]; then
     "$PYTHON_BIN" "$SOURCE_DIR/scripts/install_renderers.py" "${renderer_args[@]}"
   else
     "$PYTHON_BIN" "$SOURCE_DIR/scripts/install_renderers.py"
@@ -213,13 +228,22 @@ case "$ACTION" in
     done
     ;;
   doctor)
-    status=0
+    status="$renderer_status"
     version="$(head -1 "$SOURCE_DIR/VERSION" 2>/dev/null || true)"
+    if [[ -z "$version" ]]; then
+      echo "Missing or empty collection VERSION: $SOURCE_DIR/VERSION" >&2
+      status=1
+    fi
     for skills_dir in "${SKILLS_DIRS[@]}"; do
       for index in "${!SKILL_NAMES[@]}"; do
         target="$skills_dir/${SKILL_NAMES[$index]}"
         if same_install "$target" "${SOURCES[$index]}"; then
-          echo "${SKILL_NAMES[$index]} ${version} is installed → $target"
+          if [[ -f "$target/SKILL.md" && -r "$target/SKILL.md" && -s "$target/SKILL.md" ]]; then
+            echo "${SKILL_NAMES[$index]} ${version} is installed → $target"
+          else
+            echo "Missing, empty, or unreadable skill entry: $target/SKILL.md" >&2
+            status=1
+          fi
         else
           echo "${SKILL_NAMES[$index]} is not linked to this checkout: $target" >&2
           status=1
@@ -239,7 +263,7 @@ case "$ACTION" in
     for skills_dir in "${SKILLS_DIRS[@]}"; do
       for index in "${!SKILL_NAMES[@]}"; do
         target="$skills_dir/${SKILL_NAMES[$index]}"
-        if same_install "$target" "${SOURCES[$index]}"; then
+        if same_install "$target" "${SOURCES[$index]}" || old_install "$target" "${SOURCES[$index]}"; then
           rm "$target"
           echo "Uninstalled ${SKILL_NAMES[$index]} → $target"
         else

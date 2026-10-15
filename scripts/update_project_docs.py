@@ -2,6 +2,7 @@
 """Fast-forward this collection, then run the updated dependency installer."""
 
 import argparse
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -30,7 +31,8 @@ def update(source, arguments):
     # Execute the new installer in a fresh process after its files may have changed.
     result = subprocess.run(["bash", str(source / "install.sh"), "--update-deps", *arguments])
     if result.returncode:
-        raise RuntimeError("checkout update succeeded, but dependency/skill synchronization failed; rerun install.sh --update-deps after resolving the error")
+        retry = shlex.join(["bash", str(source / "install.sh"), "--update-deps", *arguments])
+        raise RuntimeError(f"checkout update succeeded, but dependency/skill synchronization failed; rerun {retry} after resolving the error")
 
 
 def main(argv=None):

@@ -4,6 +4,7 @@
 
 ## [Unreleased]
 
+- 宿主适配复审：补齐 Gemini CLI 的 `GEMINI_CLI_HOME/.gemini/skills` 和 Grok Build 的 `GROK_HOME/skills`，DSH 跟随原生的空白回退与 tilde 展开，OpenCode 忽略无效的相对 XDG 配置目录；升级失败给出保留宿主、引擎选择及路径引号的可执行重试命令。诊断汇总全部引擎与 Skill，拒绝入口、版本文件缺失或为空的误报；主安装器及旧绘图兼容脚本按物理路径识别归属，支持源目录丢失后的自有链接卸载并保留含软链接与父目录跳转的无关链接。新增失败回归；在隔离目录中验证 Gemini CLI、Grok Build、pi 原生加载器的安装发现及卸载移除行为，未调用模型。
 - 安装器新增 ZCode、DeepSeek Harness（DSH）、Gemini CLI、xAI Grok Build、pi coding agent 和 OpenCode，统一支持安装、升级、依赖同步、诊断、卸载及旧名迁移；增加 `--host all` 管理全部八个宿主，默认及 `both` 保持只管理 Codex、Claude Code。遵循官方用户级 Skill 目录，支持 `DSH_HOME`、`PI_CODING_AGENT_DIR`、`XDG_CONFIG_HOME`；更新入口显式传递当前宿主，保留冲突检查和共享引擎。补齐隔离生命周期、更新转发、冲突与目录覆盖回归，README 增加官方规范来源、调用方式及真实宿主会话尚未验证的边界。
 - 安装、升级和卸载前预检所有选定 Skill 根目录及其现有父路径；根路径被普通文件或悬空链接占用时，在写入偏好标记、安装引擎或修改前序宿主链接前退出，避免 `--host all` 部分安装或卸载；有效的目录软链接继续支持。
 - 将三个文档与绘图能力整理为 `project-docs` Skill 集合：增加统一入口，按需求选择或组合 `project-docs-api`、`project-docs-diagram` 和 `project-docs-overview`；四个入口统一位于 `skills/`，继续共用生成脚本、图形引擎与四个文档模板。
