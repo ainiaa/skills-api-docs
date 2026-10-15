@@ -6,6 +6,8 @@
 
 - 将三个文档与绘图能力整理为 `project-docs` Skill 集合：增加统一入口，按需求选择或组合 `project-docs-api`、`project-docs-diagram` 和 `project-docs-overview`；四个入口统一位于 `skills/`，继续共用生成脚本、图形引擎与四个文档模板。
 - 安装器在 Codex、Claude Code 两端迁移本仓库拥有的 `understand-docs`、`understand-arch`、`understand-project` 及历史名称链接，包括相对链接和目录移动后失效的链接；保留无关路径，并在任一新入口冲突时阻止部分迁移。旧调用名需改用新名称，现有渲染器配置与缓存路径继续有效。
+- 新增 `install.sh --update` 统一升级集合、三个子 Skill 和锁定版本的绘图 CLI，`--update-deps` 可单独同步依赖；自更新只快进当前跟踪分支，保护本地改动并拒绝 detached HEAD、无上游及分歧历史。受管入口在新版准备成功后切换，保留显式 CLI 覆盖及旧版本；升级时的 `--no-engines` 保持原自动安装偏好。
+
 ## [0.4.1] - 2026-09-29
 
 - 修复 Java 接口文档示例忽略 `@Schema(minimum)` 的问题；与 `@Min` 同时存在时采用更严格的下限，Markdown、Postman 和 cURL 使用一致的有效请求值。

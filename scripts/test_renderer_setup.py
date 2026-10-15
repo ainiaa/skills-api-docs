@@ -1,11 +1,14 @@
 import os
+import shlex
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from engine_paths import find_engine
-from install_renderers import RendererInstaller
+from install_renderers import DRAWIO_DEB_SHA256, DRAWIO_VERSION, MERMAID_VERSION, PLANTUML_VERSION, RendererInstaller
 from python_runtime import require_python
 
 
@@ -145,6 +148,131 @@ class RendererInstallerTests(unittest.TestCase):
                         with self.assertRaisesRegex(RuntimeError, "checksum"):
                             installer._install_drawio()
         run.assert_not_called()
+
+    def executable(self, path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("#!/bin/sh\nexit 0\n")
+        path.chmod(0o755)
+        return path
+
+    def test_update_flag_preserves_explicit_external_cli(self):
+        external = self.executable(self.home / "external-mmdc")
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).with_name("install_renderers.py")), "--update", "--engine", "mermaid"],
+            env=dict(os.environ, MERMAID_OFFICIAL_CLI=str(external), UNDERSTAND_RENDERER_HOME=str(self.home)),
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("retained", result.stdout)
+        self.assertFalse((self.home / "bin").exists())
+
+    def test_update_switches_managed_link_only_after_new_version_is_available(self):
+        installer = RendererInstaller(self.home)
+        old = self.executable(self.home / "mermaid" / "old" / "node_modules/.bin/mmdc")
+        desired = self.executable(self.home / "mermaid" / MERMAID_VERSION / "node_modules/.bin/mmdc")
+        active = installer._publish_link("mmdc", old)
+        with patch("install_renderers.find_engine", return_value=str(active)):
+            with patch.object(installer, "_ensure_node", return_value=Path("/runtime/node")):
+                with patch("install_renderers.shutil.which", return_value="/runtime/npm"):
+                    self.assertEqual(installer.ensure("mermaid", update=True), str(active))
+        self.assertEqual(active.resolve(), desired.resolve())
+        self.assertTrue(old.is_file())
+
+    def test_failed_update_keeps_active_managed_version(self):
+        installer = RendererInstaller(self.home)
+        old = self.executable(self.home / "mermaid" / "old" / "node_modules/.bin/mmdc")
+        active = installer._publish_link("mmdc", old)
+        with patch("install_renderers.find_engine", return_value=str(active)):
+            with patch.object(installer, "_ensure_node", return_value=Path("/runtime/node")):
+                with patch("install_renderers.shutil.which", return_value="/runtime/npm"):
+                    with patch.object(installer, "_run", side_effect=RuntimeError("download failed")):
+                        with self.assertRaisesRegex(RuntimeError, "download failed"):
+                            installer.ensure("mermaid", update=True)
+        self.assertEqual(active.resolve(), old.resolve())
+
+    def test_update_replaces_generated_plantuml_wrapper_and_is_idempotent(self):
+        installer = RendererInstaller(self.home)
+        old_jar = self.home / "plantuml" / "old" / "plantuml.jar"
+        old_jar.parent.mkdir(parents=True)
+        old_jar.write_bytes(b"old")
+        active = installer._publish_wrapper("plantuml", f"/runtime/java -jar {shlex.quote(str(old_jar))}")
+        desired = self.home / "plantuml" / PLANTUML_VERSION / "plantuml.jar"
+        desired.parent.mkdir()
+        desired.write_bytes(b"new")
+        with patch("install_renderers.find_engine", return_value=str(active)):
+            with patch.object(installer, "_ensure_java", return_value=Path("/runtime/java")):
+                installer.ensure("plantuml", update=True)
+                installer.ensure("plantuml", update=True)
+        self.assertIn(str(desired), active.read_text())
+        self.assertEqual(old_jar.read_bytes(), b"old")
+
+    def test_update_refuses_to_replace_custom_managed_directory_entry(self):
+        installer = RendererInstaller(self.home)
+        active = self.executable(self.home / "bin" / "plantuml")
+        original = active.read_text()
+        desired = self.home / "plantuml" / PLANTUML_VERSION / "plantuml.jar"
+        desired.parent.mkdir(parents=True)
+        desired.write_bytes(b"new")
+        with patch("install_renderers.find_engine", return_value=str(active)):
+            with patch.object(installer, "_ensure_java", return_value=Path("/runtime/java")):
+                with self.assertRaisesRegex(RuntimeError, "refusing to replace"):
+                    installer.ensure("plantuml", update=True)
+        self.assertEqual(active.read_text(), original)
+
+    def test_custom_entry_stops_update_before_installing_packages(self):
+        installer = RendererInstaller(self.home)
+        active = self.executable(self.home / "bin" / "drawio")
+        with patch.object(installer, "_install_drawio", return_value=active) as install:
+            with self.assertRaisesRegex(RuntimeError, "refusing to replace"):
+                installer.ensure("drawio", update=True)
+        install.assert_not_called()
+
+    def test_update_refuses_to_replace_link_to_unmanaged_binary(self):
+        installer = RendererInstaller(self.home)
+        external = self.executable(self.home / "external" / "mmdc")
+        active = installer._publish_link("mmdc", external)
+        self.executable(self.home / "mermaid" / MERMAID_VERSION / "node_modules/.bin/mmdc")
+        with patch("install_renderers.find_engine", return_value=str(active)):
+            with patch.object(installer, "_ensure_node", return_value=Path("/runtime/node")):
+                with patch("install_renderers.shutil.which", return_value="/runtime/npm"):
+                    with self.assertRaisesRegex(RuntimeError, "refusing to replace"):
+                        installer.ensure("mermaid", update=True)
+        self.assertEqual(active.resolve(), external.resolve())
+
+    def test_update_refuses_custom_binary_without_decoding_it_as_a_wrapper(self):
+        installer = RendererInstaller(self.home)
+        active = self.executable(self.home / "bin" / "plantuml")
+        active.write_bytes(b"\xffcustom binary")
+        desired = self.home / "plantuml" / PLANTUML_VERSION / "plantuml.jar"
+        desired.parent.mkdir(parents=True)
+        desired.write_bytes(b"new")
+        with patch("install_renderers.find_engine", return_value=str(active)):
+            with patch.object(installer, "_ensure_java", return_value=Path("/runtime/java")):
+                with self.assertRaisesRegex(RuntimeError, "refusing to replace"):
+                    installer.ensure("plantuml", update=True)
+        self.assertEqual(active.read_bytes(), b"\xffcustom binary")
+
+    def test_macos_update_selects_managed_drawio_instead_of_system_app(self):
+        installer = RendererInstaller(self.home)
+        installer.updating = True
+        with patch("install_renderers.Path.is_file", return_value=True):
+            self.assertEqual(installer._find_drawio_app(), self.home / "drawio" / DRAWIO_VERSION / "draw.io.app")
+
+    def test_linux_update_installs_pinned_package_even_when_drawio_exists(self):
+        installer = RendererInstaller(self.home)
+        installer.updating = True
+        with patch("install_renderers.platform.system", return_value="Linux"), \
+             patch("install_renderers.platform.machine", return_value="x86_64"), \
+             patch("install_renderers.Path.is_file", return_value=True), \
+             patch("install_renderers.shutil.which", return_value="/usr/bin/xvfb-run"), \
+             patch.object(installer, "_download") as download, \
+             patch.object(installer, "_digest", return_value=DRAWIO_DEB_SHA256), \
+             patch.object(installer, "_apt_install") as install, \
+             patch.object(installer, "_publish_wrapper", return_value=self.home / "bin/drawio"):
+            installer._install_drawio()
+        download.assert_called_once()
+        self.assertIn(DRAWIO_VERSION, download.call_args.args[0])
+        self.assertTrue(install.call_args.args[0].endswith("drawio.deb"))
 
 
 if __name__ == "__main__":

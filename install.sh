@@ -13,6 +13,8 @@ OLD_NAMES=(api-savior-docs understand-api-docs understand-api-arch understand-do
 OLD_SOURCES=("$SOURCE_DIR" "$SOURCE_DIR" "$SOURCE_DIR/skills/understand-api-arch"
              "$SOURCE_DIR" "$SOURCE_DIR/skills/understand-arch" "$SOURCE_DIR/skills/understand-project")
 ACTION=install
+ACTION_COUNT=0
+UPDATE_DEPS=false
 HOST=both
 NO_ENGINES=false
 ENGINES=()
@@ -25,11 +27,15 @@ Usage:
   bash install.sh [--host codex|claude|both] [--engine NAME ... | --no-engines]
   bash install.sh --doctor [--host codex|claude|both] [--engine NAME ... | --no-engines]
   bash install.sh --uninstall [--host codex|claude|both]
+  bash install.sh --update [--host codex|claude|both] [--engine NAME ... | --no-engines]
+  bash install.sh --update-deps [--host codex|claude|both] [--engine NAME ... | --no-engines]
 
 Default: install the unified entry and three specialist skills for Codex and Claude Code, and install all missing
 Mermaid, PlantUML, draw.io, and Archify renderers. --engine installs/checks only
 the named renderer; --no-engines installs/checks only the skill links.
 Uninstall removes this checkout's skill links, never shared renderer programs.
+--update fast-forwards the current tracked branch, then synchronizes the skills
+and pinned renderer versions. --update-deps skips the Git update.
 EOF
 }
 
@@ -52,9 +58,11 @@ old_install() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --install) ACTION=install; shift ;;
-    --doctor) ACTION=doctor; shift ;;
-    --uninstall) ACTION=uninstall; shift ;;
+    --install) ACTION=install; ACTION_COUNT=$((ACTION_COUNT + 1)); shift ;;
+    --doctor) ACTION=doctor; ACTION_COUNT=$((ACTION_COUNT + 1)); shift ;;
+    --uninstall) ACTION=uninstall; ACTION_COUNT=$((ACTION_COUNT + 1)); shift ;;
+    --update) ACTION=update; ACTION_COUNT=$((ACTION_COUNT + 1)); shift ;;
+    --update-deps) UPDATE_DEPS=true; ACTION_COUNT=$((ACTION_COUNT + 1)); shift ;;
     --host)
       [[ $# -ge 2 && "$2" =~ ^(codex|claude|both)$ ]] || { usage >&2; exit 2; }
       HOST="$2"; shift 2 ;;
@@ -67,6 +75,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ "$ACTION_COUNT" -gt 1 ]]; then
+  echo "Error: choose only one install, doctor, uninstall, or update action" >&2
+  exit 2
+fi
 if [[ "$NO_ENGINES" == true && ${#ENGINES[@]} -gt 0 ]]; then
   echo "Error: --engine and --no-engines cannot be combined" >&2
   exit 2
@@ -79,6 +91,14 @@ fi
 SKILLS_DIRS=()
 if [[ "$HOST" == codex || "$HOST" == both ]]; then SKILLS_DIRS+=("$CODEX_SKILLS_DIR"); fi
 if [[ "$HOST" == claude || "$HOST" == both ]]; then SKILLS_DIRS+=("$CLAUDE_SKILLS_DIR"); fi
+
+if [[ "$ACTION" == install || "$ACTION" == update ]]; then
+  if ! command -v "$PYTHON_BIN" >/dev/null 2>&1 ||
+     ! "$PYTHON_BIN" -c 'import sys; sys.exit(sys.version_info < (3, 11))'; then
+    echo "Error: Python 3.11 or newer is required (set UNDERSTAND_PYTHON to its executable)" >&2
+    exit 1
+  fi
+fi
 
 if [[ "$ACTION" == install ]]; then
   for source in "${SOURCES[@]}"; do
@@ -100,11 +120,6 @@ if [[ "$ACTION" == install ]]; then
     echo "Error: incomplete skill group checkout: $SOURCE_DIR" >&2
     exit 1
   fi
-  if ! command -v "$PYTHON_BIN" >/dev/null 2>&1 ||
-     ! "$PYTHON_BIN" -c 'import sys; sys.exit(sys.version_info < (3, 11))'; then
-    echo "Error: Python 3.11 or newer is required (set UNDERSTAND_PYTHON to its executable)" >&2
-    exit 1
-  fi
 fi
 
 # Check every selected host before installing engines or changing any skill link.
@@ -124,8 +139,15 @@ renderer_args=()
 if [[ ${#ENGINES[@]} -gt 0 ]]; then
   for engine in "${ENGINES[@]}"; do renderer_args+=(--engine "$engine"); done
 fi
+if [[ "$ACTION" == update ]]; then
+  update_args=(--host "$HOST")
+  if [[ "$NO_ENGINES" == true ]]; then update_args+=(--no-engines); fi
+  if [[ ${#ENGINES[@]} -gt 0 ]]; then update_args+=("${renderer_args[@]}"); fi
+  exec "$PYTHON_BIN" "$SOURCE_DIR/scripts/update_project_docs.py" "${update_args[@]}"
+fi
 if [[ "$ACTION" != uninstall && "$NO_ENGINES" == false ]]; then
   if [[ "$ACTION" == doctor ]]; then renderer_args+=(--doctor); fi
+  if [[ "$UPDATE_DEPS" == true ]]; then renderer_args+=(--update); fi
   if [[ ${#renderer_args[@]} -gt 0 ]]; then
     "$PYTHON_BIN" "$SOURCE_DIR/scripts/install_renderers.py" "${renderer_args[@]}"
   else
@@ -136,8 +158,10 @@ fi
 case "$ACTION" in
   install)
     if [[ "$NO_ENGINES" == true ]]; then
-      mkdir -p "$RENDERER_HOME"
-      : > "$RENDERER_HOME/no-auto-install"
+      if [[ "$UPDATE_DEPS" == false ]]; then
+        mkdir -p "$RENDERER_HOME"
+        : > "$RENDERER_HOME/no-auto-install"
+      fi
     else
       rm -f "$RENDERER_HOME/no-auto-install"
     fi

@@ -104,8 +104,17 @@ HTML 是 Archify 的交互展示文件；其余三种引擎的 HTML 不是本项
 | `bash install.sh --no-engines` | 只安装 Skill，并记录“不要自动安装引擎”的选择 |
 | `bash install.sh --host claude --engine mermaid` | 只为 Claude Code 安装 Skill，只补齐 Mermaid |
 | `bash install.sh --doctor` | 检查两个宿主的 Skill 链接和四个引擎；可配合 `--host`、`--engine`、`--no-engines` 缩小检查范围 |
+| `bash install.sh --update` | 快进更新当前跟踪分支，重新安装集合与三个子 Skill，并同步四个绘图 CLI 到新版集合锁定的版本 |
+| `bash install.sh --update-deps` | 不拉取仓库，只同步当前集合声明的绘图 CLI 与 Skill 链接 |
+| `bash install.sh --update --no-engines` | 仅更新集合及三个子 Skill，保留原有引擎自动安装偏好 |
 
-`--host codex` 只管理 Codex，`--host claude` 只管理 Claude Code，默认 `--host both`。使用 `--no-engines` 后，后续画图时 Skill 也不会擅自补装；再次显式运行带 `--engine` 的安装命令可解除这一选择。已装好的引擎会复用，无需每次重新安装。
+`--host codex` 只管理 Codex，`--host claude` 只管理 Claude Code，默认 `--host both`。普通安装使用 `--no-engines` 后，后续画图时 Skill 也不会擅自补装；再次显式运行带 `--engine` 的安装命令可解除这一选择。已装好的引擎会复用，无需每次重新安装。
+
+统一升级使用 `bash install.sh --update`，也可在 Codex 中说“使用 project-docs 更新本集合及依赖”。升级读取当前 Git 分支的跟踪上游，不自动切换分支；本地有未提交或未跟踪文件、处于 detached HEAD、未配置上游或无法快进时会停止，不自动暂存、重置或覆盖本地改动。仓库更新成功后，用新版安装器同步链接与依赖；若后续依赖步骤失败，会明确返回失败，可解决原因后运行 `bash install.sh --update-deps` 重试。
+
+三个子 Skill 随同一仓库更新。四个绘图 CLI 按本集合锁定并验收的版本同步，保留下载校验；新版准备成功后才切换受管入口，旧版本目录保留。macOS 的 draw.io 更新安装在共享管理目录，Linux 使用现有 apt 安装流程，可能需要系统权限。`*_OFFICIAL_CLI` 显式指定的工具保留原路径并提示由外部管理；管理目录中的自定义入口也不会被强行覆盖。PDLC、understand-anything 和 CodeGraph 属于按需使用的外部能力，不作为本集合必装依赖，也不扫描升级用户的其他全局 Skill 或软件。
+
+`--update`、`--update-deps` 均支持 `--engine mermaid` 等选项限定 CLI 范围；这两个命令中的 `--no-engines` 只跳过本次引擎同步，不改变原有自动安装偏好。普通生成任务不会在运行前自动联网升级。
 
 ### 渲染引擎要另外安装吗？
 
