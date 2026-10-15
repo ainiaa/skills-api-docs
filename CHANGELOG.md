@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-15
+
+- 仓库更名为 `skills-project-docs`，与统一入口、接口文档、技术图和项目说明的集合范围一致；同步克隆地址、问题反馈与版本比较链接。已有检出更新远程地址即可继续使用。
+
 - 补齐 ZCode Desktop 3.14.5 内置 CLI 0.16.9、DSH 0.2.0-rc.2 官方技能注册表／文件系统 provider、OpenCode 1.19.0 的真实发现、正文加载和卸载验收。新增可显式启用的三项原生集成测试，隔离用户配置，核对四份正文及原生来源，覆盖默认与自定义目录，卸载后再次确认技能不可见／不可加载；本轮未发现安装器缺陷，未调用模型或添加项目依赖。
 
 - 宿主适配复审：补齐 Gemini CLI 的 `GEMINI_CLI_HOME/.gemini/skills` 和 Grok Build 的 `GROK_HOME/skills`，DSH 跟随原生的空白回退与 tilde 展开，OpenCode 忽略无效的相对 XDG 配置目录；升级失败给出保留宿主、引擎选择及路径引号的可执行重试命令。诊断汇总全部引擎与 Skill，拒绝入口、版本文件缺失或为空的误报；主安装器及旧绘图兼容脚本按物理路径识别归属，支持源目录丢失后的自有链接卸载并保留含软链接与父目录跳转的无关链接。新增失败回归；在隔离目录中验证 Gemini CLI、Grok Build、pi 原生加载器的安装发现及卸载移除行为，未调用模型。
@@ -63,9 +67,10 @@
 - 修复 macOS 符号链接环境下 tree-sitter 回退路径未 resolve 导致 narrowed scan 静默失效的问题；`--no-codegraph` 的优先级高于测试钩子环境变量。
 - 文档同步：SKILL.md 与 README 增补发现引擎章节、降级规则与可选依赖安装方式。
 
-[Unreleased]: https://github.com/ainiaa/skills-api-docs/compare/v0.4.1...HEAD
-[0.4.1]: https://github.com/ainiaa/skills-api-docs/compare/v0.4.0...v0.4.1
-[0.4.0]: https://github.com/ainiaa/skills-api-docs/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/ainiaa/skills-api-docs/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/ainiaa/skills-api-docs/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/ainiaa/skills-api-docs/releases/tag/v0.1.0
+[Unreleased]: https://github.com/ainiaa/skills-project-docs/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/ainiaa/skills-project-docs/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/ainiaa/skills-project-docs/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/ainiaa/skills-project-docs/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/ainiaa/skills-project-docs/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/ainiaa/skills-project-docs/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/ainiaa/skills-project-docs/releases/tag/v0.1.0

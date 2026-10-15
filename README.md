@@ -2,15 +2,15 @@
 
 面向 Codex、Claude Code、ZCode、DeepSeek Harness（DSH）、Gemini CLI、Grok Build、pi 和 OpenCode 的项目文档 Skill 集合。`project-docs` 是统一入口，根据需求选择或组合三个专用能力：`project-docs-api` 生成接口文档，`project-docs-diagram` 生成和校验技术图，`project-docs-overview` 生成项目介绍、功能说明与开发者上手手册。所有宿主共用同一份仓库与渲染引擎安装。
 
-当前开发版本：[0.5.0](VERSION)（尚未发布）。改动记录见[变更日志](CHANGELOG.md)。
+当前版本：[0.5.0](https://github.com/ainiaa/skills-project-docs/releases/tag/v0.5.0)。改动记录见[变更日志](CHANGELOG.md)。
 
 ## 快速开始
 
 1. 克隆仓库，一次安装统一入口、三个专用 Skill 与缺失的绘图引擎：
 
    ```bash
-   git clone https://github.com/ainiaa/skills-api-docs.git
-   cd skills-api-docs
+   git clone https://github.com/ainiaa/skills-project-docs.git
+   cd skills-project-docs
    bash install.sh
    ```
 
@@ -114,6 +114,12 @@ HTML 是 Archify 的交互展示文件；其余三种引擎的 HTML 不是本项
 | `bash install.sh --uninstall --host all` | 从八个宿主移除本仓库拥有的 Skill 链接，保留共享引擎 |
 
 `--host` 接受 `codex`、`claude`、`zcode`、`dsh`、`gemini`、`grok`、`pi`、`opencode`、`both`、`all`。默认及 `both` 仍只管理 Codex、Claude Code；`all` 显式选择全部八个宿主。该选项适用于安装、升级、依赖同步、诊断和卸载；后续管理时使用与安装时相同的宿主选择。普通安装使用 `--no-engines` 后，后续画图时 Skill 也不会擅自补装；再次显式运行带 `--engine` 的安装命令可解除这一选择。已装好的引擎会复用，无需每次重新安装。
+
+仓库已由 `skills-api-docs` 更名为 `skills-project-docs`。已有检出可在原目录更新远程地址，继续使用现有 Skill 链接：
+
+```bash
+git remote set-url origin https://github.com/ainiaa/skills-project-docs.git
+```
 
 ### 宿主支持
 
@@ -274,4 +280,4 @@ python3 -m unittest discover -s scripts -p test_native_hosts.py -v
 
 ## 许可与反馈
 
-[Apache License 2.0](LICENSE) · [GitHub Issues](https://github.com/ainiaa/skills-api-docs/issues)
+[Apache License 2.0](LICENSE) · [GitHub Issues](https://github.com/ainiaa/skills-project-docs/issues)
