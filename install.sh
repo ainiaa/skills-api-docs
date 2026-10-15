@@ -6,10 +6,12 @@ CODEX_SKILLS_DIR="${CODEX_HOME:-${HOME}/.codex}/skills"
 CLAUDE_SKILLS_DIR="${CLAUDE_HOME:-${HOME}/.claude}/skills"
 PYTHON_BIN="${UNDERSTAND_PYTHON:-python3}"
 RENDERER_HOME="${UNDERSTAND_RENDERER_HOME:-${HOME}/.local/share/understand-skills/renderers}"
-SKILL_NAMES=(understand-docs understand-arch understand-project)
-SOURCES=("$SOURCE_DIR" "$SOURCE_DIR/skills/understand-arch" "$SOURCE_DIR/skills/understand-project")
-OLD_NAMES=(api-savior-docs understand-api-docs understand-api-arch)
-OLD_SOURCES=("$SOURCE_DIR" "$SOURCE_DIR" "$SOURCE_DIR/skills/understand-api-arch")
+SKILL_NAMES=(project-docs project-docs-api project-docs-diagram project-docs-overview)
+SOURCES=("$SOURCE_DIR/skills/project-docs" "$SOURCE_DIR/skills/project-docs-api"
+         "$SOURCE_DIR/skills/project-docs-diagram" "$SOURCE_DIR/skills/project-docs-overview")
+OLD_NAMES=(api-savior-docs understand-api-docs understand-api-arch understand-docs understand-arch understand-project)
+OLD_SOURCES=("$SOURCE_DIR" "$SOURCE_DIR" "$SOURCE_DIR/skills/understand-api-arch"
+             "$SOURCE_DIR" "$SOURCE_DIR/skills/understand-arch" "$SOURCE_DIR/skills/understand-project")
 ACTION=install
 HOST=both
 NO_ENGINES=false
@@ -17,14 +19,14 @@ ENGINES=()
 
 usage() {
   cat <<'EOF'
-Understand skill group installer
+Project Docs skill collection installer
 
 Usage:
   bash install.sh [--host codex|claude|both] [--engine NAME ... | --no-engines]
   bash install.sh --doctor [--host codex|claude|both] [--engine NAME ... | --no-engines]
   bash install.sh --uninstall [--host codex|claude|both]
 
-Default: install all three skills for Codex and Claude Code, and install all missing
+Default: install the unified entry and three specialist skills for Codex and Claude Code, and install all missing
 Mermaid, PlantUML, draw.io, and Archify renderers. --engine installs/checks only
 the named renderer; --no-engines installs/checks only the skill links.
 Uninstall removes this checkout's skill links, never shared renderer programs.
@@ -39,8 +41,13 @@ same_install() {
 }
 
 old_install() {
-  local target="$1" source="$2"
-  [[ -L "$target" && "$(readlink "$target")" == "$source" ]]
+  local target="$1" source="$2" link parent
+  [[ -L "$target" ]] || return 1
+  link="$(readlink "$target")"
+  [[ "$link" == /* ]] || link="$(dirname "$target")/$link"
+  # Old skill directories may have moved; resolve the parent without requiring the leaf.
+  parent="$(cd "$(dirname "$link")" 2>/dev/null && pwd -P)" || return 1
+  [[ "$parent/$(basename "$link")" == "$source" ]]
 }
 
 while [[ $# -gt 0 ]]; do
@@ -74,14 +81,18 @@ if [[ "$HOST" == codex || "$HOST" == both ]]; then SKILLS_DIRS+=("$CODEX_SKILLS_
 if [[ "$HOST" == claude || "$HOST" == both ]]; then SKILLS_DIRS+=("$CLAUDE_SKILLS_DIR"); fi
 
 if [[ "$ACTION" == install ]]; then
-  if [[ ! -f "$SOURCE_DIR/SKILL.md" || ! -f "$SOURCE_DIR/VERSION" ||
+  for source in "${SOURCES[@]}"; do
+    if [[ ! -f "$source/SKILL.md" ]]; then
+      echo "Error: incomplete skill collection checkout: $source" >&2
+      exit 1
+    fi
+  done
+  if [[ ! -f "$SOURCE_DIR/VERSION" ||
         ! -f "$SOURCE_DIR/scripts/generate_api_docs.py" ||
-        ! -f "${SOURCES[1]}/SKILL.md" ||
-        ! -f "${SOURCES[2]}/SKILL.md" ||
-        ! -f "${SOURCES[2]}/assets/project-overview.md" ||
-        ! -f "${SOURCES[2]}/assets/feature-description.md" ||
-        ! -f "${SOURCES[2]}/assets/developer-guide.md" ||
-        ! -f "${SOURCES[2]}/assets/architecture-overview.md" ||
+        ! -f "${SOURCES[3]}/assets/project-overview.md" ||
+        ! -f "${SOURCES[3]}/assets/feature-description.md" ||
+        ! -f "${SOURCES[3]}/assets/developer-guide.md" ||
+        ! -f "${SOURCES[3]}/assets/architecture-overview.md" ||
         ! -f "$SOURCE_DIR/scripts/validate_project_doc.py" ||
         ! -f "$SOURCE_DIR/scripts/project_doc_context.py" ||
         ! -f "$SOURCE_DIR/scripts/project_doc_impact.py" ||

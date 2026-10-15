@@ -7,6 +7,7 @@ from pathlib import Path
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 INSTALLER = REPOSITORY / "install.sh"
+API_SKILL = REPOSITORY / "skills" / "project-docs-api"
 
 
 class InstallTests(unittest.TestCase):
@@ -16,12 +17,14 @@ class InstallTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.codex_home = self.root / "codex home"
         self.claude_home = self.root / "claude home"
-        self.target = self.codex_home / "skills" / "understand-docs"
-        self.arch_target = self.codex_home / "skills" / "understand-arch"
-        self.project_target = self.codex_home / "skills" / "understand-project"
-        self.claude_docs_target = self.claude_home / "skills" / "understand-docs"
-        self.claude_arch_target = self.claude_home / "skills" / "understand-arch"
-        self.claude_project_target = self.claude_home / "skills" / "understand-project"
+        self.suite_target = self.codex_home / "skills" / "project-docs"
+        self.claude_suite_target = self.claude_home / "skills" / "project-docs"
+        self.target = self.codex_home / "skills" / "project-docs-api"
+        self.arch_target = self.codex_home / "skills" / "project-docs-diagram"
+        self.project_target = self.codex_home / "skills" / "project-docs-overview"
+        self.claude_docs_target = self.claude_home / "skills" / "project-docs-api"
+        self.claude_arch_target = self.claude_home / "skills" / "project-docs-diagram"
+        self.claude_project_target = self.claude_home / "skills" / "project-docs-overview"
         self.old_target = self.codex_home / "skills" / "api-savior-docs"
         self.previous_target = self.codex_home / "skills" / "understand-api-docs"
         self.old_arch_target = self.codex_home / "skills" / "understand-api-arch"
@@ -43,12 +46,13 @@ class InstallTests(unittest.TestCase):
     def test_install_is_idempotent_and_doctor_accepts_link(self):
         first = self.run_installer()
         self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(self.suite_target.resolve(), REPOSITORY / "skills" / "project-docs")
         self.assertTrue(self.target.is_symlink())
-        self.assertEqual(self.target.resolve(), REPOSITORY)
+        self.assertEqual(self.target.resolve(), API_SKILL)
         self.assertTrue(self.arch_target.is_symlink())
-        self.assertEqual(self.arch_target.resolve(), REPOSITORY / "skills" / "understand-arch")
+        self.assertEqual(self.arch_target.resolve(), REPOSITORY / "skills" / "project-docs-diagram")
         self.assertTrue(self.project_target.is_symlink())
-        self.assertEqual(self.project_target.resolve(), REPOSITORY / "skills" / "understand-project")
+        self.assertEqual(self.project_target.resolve(), REPOSITORY / "skills" / "project-docs-overview")
         self.assertTrue((self.project_target / "assets" / "project-overview.md").is_file())
         self.assertTrue((self.project_target / "assets" / "feature-description.md").is_file())
         self.assertTrue((self.project_target / "assets" / "developer-guide.md").is_file())
@@ -58,22 +62,22 @@ class InstallTests(unittest.TestCase):
 
         second = self.run_installer()
         self.assertEqual(second.returncode, 0, second.stderr)
-        self.assertEqual(self.target.resolve(), REPOSITORY)
-        self.assertEqual(self.arch_target.resolve(), REPOSITORY / "skills" / "understand-arch")
-        self.assertEqual(self.project_target.resolve(), REPOSITORY / "skills" / "understand-project")
+        self.assertEqual(self.target.resolve(), API_SKILL)
+        self.assertEqual(self.arch_target.resolve(), REPOSITORY / "skills" / "project-docs-diagram")
+        self.assertEqual(self.project_target.resolve(), REPOSITORY / "skills" / "project-docs-overview")
         self.assertEqual(self.run_installer("--doctor").returncode, 0)
 
     def test_install_uses_home_when_codex_home_is_unset(self):
         del self.environment["CODEX_HOME"]
-        expected = self.root / ".codex" / "skills" / "understand-docs"
+        expected = self.root / ".codex" / "skills" / "project-docs-api"
 
         result = self.run_installer()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(expected.is_symlink())
-        self.assertEqual(expected.resolve(), REPOSITORY)
-        arch_expected = self.root / ".codex" / "skills" / "understand-arch"
+        self.assertEqual(expected.resolve(), API_SKILL)
+        arch_expected = self.root / ".codex" / "skills" / "project-docs-diagram"
         self.assertTrue(arch_expected.is_symlink())
-        self.assertEqual(arch_expected.resolve(), REPOSITORY / "skills" / "understand-arch")
+        self.assertEqual(arch_expected.resolve(), REPOSITORY / "skills" / "project-docs-diagram")
 
     def test_install_preserves_existing_directory(self):
         self.target.mkdir(parents=True)
@@ -109,21 +113,21 @@ class InstallTests(unittest.TestCase):
 
     def test_install_completes_previous_api_only_installation(self):
         self.target.parent.mkdir(parents=True)
-        self.target.symlink_to(REPOSITORY)
+        self.target.symlink_to(API_SKILL)
 
         result = self.run_installer()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.target.resolve(), REPOSITORY)
-        self.assertEqual(self.arch_target.resolve(), REPOSITORY / "skills" / "understand-arch")
+        self.assertEqual(self.target.resolve(), API_SKILL)
+        self.assertEqual(self.arch_target.resolve(), REPOSITORY / "skills" / "project-docs-diagram")
 
     def test_install_completes_previous_arch_only_installation(self):
         self.arch_target.parent.mkdir(parents=True)
-        self.arch_target.symlink_to(REPOSITORY / "skills" / "understand-arch")
+        self.arch_target.symlink_to(REPOSITORY / "skills" / "project-docs-diagram")
 
         result = self.run_installer()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.target.resolve(), REPOSITORY)
-        self.assertEqual(self.arch_target.resolve(), REPOSITORY / "skills" / "understand-arch")
+        self.assertEqual(self.target.resolve(), API_SKILL)
+        self.assertEqual(self.arch_target.resolve(), REPOSITORY / "skills" / "project-docs-diagram")
 
     def test_install_migrates_owned_old_names(self):
         self.old_target.parent.mkdir(parents=True)
@@ -133,11 +137,88 @@ class InstallTests(unittest.TestCase):
 
         result = self.run_installer()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.target.resolve(), REPOSITORY)
-        self.assertEqual(self.arch_target.resolve(), REPOSITORY / "skills" / "understand-arch")
+        self.assertEqual(self.target.resolve(), API_SKILL)
+        self.assertEqual(self.arch_target.resolve(), REPOSITORY / "skills" / "project-docs-diagram")
         self.assertFalse(self.old_target.is_symlink())
         self.assertFalse(self.previous_target.is_symlink())
         self.assertFalse(self.old_arch_target.is_symlink())
+
+    def legacy_links(self, skills_dir):
+        return {
+            skills_dir / "understand-docs": REPOSITORY,
+            skills_dir / "understand-arch": REPOSITORY / "skills" / "understand-arch",
+            skills_dir / "understand-project": REPOSITORY / "skills" / "understand-project",
+            skills_dir / "api-savior-docs": REPOSITORY,
+            skills_dir / "understand-api-docs": REPOSITORY,
+            skills_dir / "understand-api-arch": REPOSITORY / "skills" / "understand-api-arch",
+        }
+
+    def test_migrates_all_legacy_names_for_both_hosts(self):
+        legacy = {}
+        for home in (self.codex_home, self.claude_home):
+            skills_dir = home / "skills"
+            skills_dir.mkdir(parents=True)
+            for target, source in self.legacy_links(skills_dir).items():
+                target.symlink_to(os.path.relpath(source, skills_dir.resolve()))
+                legacy[target] = source
+
+        result = self.run_installer("--no-engines", isolated=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for target in legacy:
+            self.assertFalse(target.is_symlink(), target)
+        for home in (self.codex_home, self.claude_home):
+            for name in ("project-docs", "project-docs-api", "project-docs-diagram", "project-docs-overview"):
+                installed = home / "skills" / name
+                self.assertEqual(installed.resolve(), REPOSITORY / "skills" / name)
+                self.assertIn(f"name: {name}\n", (installed / "SKILL.md").read_text())
+        self.assertEqual(self.run_installer("--doctor", "--no-engines", isolated=False).returncode, 0)
+        self.assertEqual(self.run_installer("--no-engines", isolated=False).returncode, 0)
+
+    def test_suite_conflict_preserves_legacy_links_on_both_hosts(self):
+        for home in (self.codex_home, self.claude_home):
+            skills_dir = home / "skills"
+            skills_dir.mkdir(parents=True)
+            (skills_dir / "understand-docs").symlink_to(REPOSITORY)
+        self.claude_suite_target.mkdir()
+        marker = self.claude_suite_target / "keep.txt"
+        marker.write_text("keep")
+
+        result = self.run_installer("--no-engines", isolated=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(marker.read_text(), "keep")
+        self.assertFalse(self.suite_target.exists())
+        for home in (self.codex_home, self.claude_home):
+            self.assertTrue((home / "skills" / "understand-docs").is_symlink())
+            self.assertFalse((home / "skills" / "project-docs-api").exists())
+
+    def test_migration_preserves_unrelated_legacy_directory_and_broken_link(self):
+        skills_dir = self.codex_home / "skills"
+        unrelated = skills_dir / "understand-project"
+        unrelated.mkdir(parents=True)
+        marker = unrelated / "keep.txt"
+        marker.write_text("keep")
+        broken = skills_dir / "understand-arch"
+        destination = self.root / "missing unrelated skill"
+        broken.symlink_to(destination)
+
+        self.assertEqual(self.run_installer().returncode, 0)
+        self.assertEqual(self.run_installer("--uninstall").returncode, 0)
+        self.assertEqual(marker.read_text(), "keep")
+        self.assertTrue(broken.is_symlink())
+        self.assertEqual(broken.readlink(), destination)
+
+    def test_doctor_reports_remaining_owned_legacy_name(self):
+        self.assertEqual(self.run_installer().returncode, 0)
+        legacy = self.codex_home / "skills" / "understand-arch"
+        legacy.symlink_to(REPOSITORY / "skills" / "understand-arch")
+        self.assertNotEqual(self.run_installer("--doctor").returncode, 0)
+        self.assertEqual(self.run_installer("--uninstall").returncode, 0)
+        self.assertFalse(legacy.is_symlink())
+
+    def test_doctor_requires_suite_entry(self):
+        self.assertEqual(self.run_installer().returncode, 0)
+        self.suite_target.unlink()
+        self.assertNotEqual(self.run_installer("--doctor").returncode, 0)
 
     def test_conflict_preserves_old_names_without_partial_migration(self):
         self.old_target.parent.mkdir(parents=True)
@@ -177,14 +258,14 @@ class InstallTests(unittest.TestCase):
 
     def test_uninstall_preserves_both_links_when_arch_target_is_unrelated(self):
         self.target.parent.mkdir(parents=True)
-        self.target.symlink_to(REPOSITORY)
+        self.target.symlink_to(API_SKILL)
         other = self.root / "other skill"
         other.mkdir()
         self.arch_target.symlink_to(other)
 
         result = self.run_installer("--uninstall")
         self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(self.target.resolve(), REPOSITORY)
+        self.assertEqual(self.target.resolve(), API_SKILL)
         self.assertEqual(self.arch_target.resolve(), other.resolve())
 
     def test_install_preserves_broken_symlink(self):
@@ -221,13 +302,14 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(self.run_installer().returncode, 0)
         result = self.run_installer("--uninstall")
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.suite_target.is_symlink())
         self.assertFalse(self.target.exists())
         self.assertFalse(self.target.is_symlink())
         self.assertFalse(self.arch_target.exists())
         self.assertFalse(self.arch_target.is_symlink())
         self.assertFalse(self.project_target.exists())
         self.assertFalse(self.project_target.is_symlink())
-        self.assertTrue((REPOSITORY / "SKILL.md").is_file())
+        self.assertTrue((API_SKILL / "SKILL.md").is_file())
 
     def test_uninstall_removes_owned_old_names(self):
         self.old_target.parent.mkdir(parents=True)
@@ -256,18 +338,20 @@ class InstallTests(unittest.TestCase):
 
         result = self.run_installer(isolated=False)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.claude_docs_target.resolve(), REPOSITORY)
-        self.assertEqual(self.claude_arch_target.resolve(), REPOSITORY / "skills" / "understand-arch")
-        self.assertEqual(self.claude_project_target.resolve(), REPOSITORY / "skills" / "understand-project")
+        self.assertEqual(self.claude_suite_target.resolve(), REPOSITORY / "skills" / "project-docs")
+        self.assertEqual(self.claude_docs_target.resolve(), API_SKILL)
+        self.assertEqual(self.claude_arch_target.resolve(), REPOSITORY / "skills" / "project-docs-diagram")
+        self.assertEqual(self.claude_project_target.resolve(), REPOSITORY / "skills" / "project-docs-overview")
         self.assertEqual(self.run_installer("--doctor", isolated=False).returncode, 0)
 
     def test_claude_only_and_no_engines(self):
         result = self.run_installer("--host", "claude", "--no-engines", isolated=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(self.target.exists())
-        self.assertEqual(self.claude_docs_target.resolve(), REPOSITORY)
-        self.assertEqual(self.claude_arch_target.resolve(), REPOSITORY / "skills" / "understand-arch")
-        self.assertEqual(self.claude_project_target.resolve(), REPOSITORY / "skills" / "understand-project")
+        self.assertEqual(self.claude_suite_target.resolve(), REPOSITORY / "skills" / "project-docs")
+        self.assertEqual(self.claude_docs_target.resolve(), API_SKILL)
+        self.assertEqual(self.claude_arch_target.resolve(), REPOSITORY / "skills" / "project-docs-diagram")
+        self.assertEqual(self.claude_project_target.resolve(), REPOSITORY / "skills" / "project-docs-overview")
         self.assertEqual(self.run_installer("--doctor", "--host", "claude", "--no-engines",
                                             isolated=False).returncode, 0)
         self.assertEqual(self.run_installer("--uninstall", "--host", "claude",

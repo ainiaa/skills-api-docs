@@ -1,6 +1,6 @@
 # Source-based diagram contract
 
-本文件是 `understand-arch` 的绘图与验收契约。用户只需说“根据代码生成架构图”；Skill 应根据仓库证据选择图型与层级，交付可编辑源文件和所需导出。参考图只影响可选的视觉偏好，不是生成合格架构图的前提。
+本文件是 `project-docs-diagram` 的绘图与验收契约。用户只需说“根据代码生成架构图”；Skill 应根据仓库证据选择图型与层级，交付可编辑源文件和所需导出。参考图只影响可选的视觉偏好，不是生成合格架构图的前提。
 
 **可置信的含义**：逐项区分源码证据、CodeGraph 线索、图型语义校验、官方引擎解析、实际图片审查。任何一项通过都不能代替其他项；特别是“成功导出 PNG”不等于“架构图正确且可读”。
 
@@ -20,7 +20,7 @@
 
 Archify 是独立的五型展示引擎；旧 IR v1 仅映射其 architecture 模式，原生通道可验收全部五种官方 JSON 模式。它不充当 C4、UML、BPMN 或 ERD 的规范导出器。
 
-各官方引擎的图型目录大于上表的分型 IR 范围。对 IR v2 未覆盖的图型，Skill 按[原生绘图约定](../skills/understand-arch/references/native-diagrams.md)选择语义、核对代码、编写官方原生文件，再由 [`render_native_diagram.py`](../scripts/render_native_diagram.py) 交给 Mermaid、PlantUML、draw.io 或 Archify 官方 CLI 验证与导出；Archify 原生 JSON 覆盖官方五种模式。源码图须附逐条证据清单：`sourceEvidence: anchors_validated` 只证明图中文字及源码引文存在，`claimSemantics: not_proven` 提醒人工复核解释；未附清单时为 `sourceEvidence: not_checked`。完整差异见[渲染引擎能力审计](RENDERER_CAPABILITY_AUDIT.md)。
+各官方引擎的图型目录大于上表的分型 IR 范围。对 IR v2 未覆盖的图型，Skill 按[原生绘图约定](../skills/project-docs-diagram/references/native-diagrams.md)选择语义、核对代码、编写官方原生文件，再由 [`render_native_diagram.py`](../scripts/render_native_diagram.py) 交给 Mermaid、PlantUML、draw.io 或 Archify 官方 CLI 验证与导出；Archify 原生 JSON 覆盖官方五种模式。源码图须附逐条证据清单：`sourceEvidence: anchors_validated` 只证明图中文字及源码引文存在，`claimSemantics: not_proven` 提醒人工复核解释；未附清单时为 `sourceEvidence: not_checked`。完整差异见[渲染引擎能力审计](RENDERER_CAPABILITY_AUDIT.md)。
 
 ## 简短请求的默认行为
 

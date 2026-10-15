@@ -1,12 +1,12 @@
-# Understand Docs、Understand Arch 与 Understand Project
+# Project Docs
 
-面向 Codex 和 Claude Code 的源码文档 Skill 组：`understand-docs` 生成接口文档，`understand-arch` 生成和校验技术图，`understand-project` 生成项目介绍、功能说明与开发者上手手册。两个宿主共用同一份仓库与渲染引擎安装。
+面向 Codex 和 Claude Code 的项目文档 Skill 集合。`project-docs` 是统一入口，根据需求选择或组合三个专用能力：`project-docs-api` 生成接口文档，`project-docs-diagram` 生成和校验技术图，`project-docs-overview` 生成项目介绍、功能说明与开发者上手手册。两个宿主共用同一份仓库与渲染引擎安装。
 
-当前版本：[0.4.1](VERSION)。改动记录见[变更日志](CHANGELOG.md)。
+当前开发版本：[0.5.0](VERSION)（尚未发布）。改动记录见[变更日志](CHANGELOG.md)。
 
 ## 快速开始
 
-1. 克隆仓库，一次安装三个 Skill 与缺失的绘图引擎：
+1. 克隆仓库，一次安装统一入口、三个专用 Skill 与缺失的绘图引擎：
 
    ```bash
    git clone https://github.com/ainiaa/skills-api-docs.git
@@ -23,13 +23,15 @@
 3. 直接描述目标，或显式点名 Skill：
 
    ```text
-   Codex：使用 $understand-docs 为这个 Spring Controller 生成 API 文档。
-   Codex：使用 $understand-arch 根据这个项目的代码生成 draw.io 架构图，并导出 PNG。
-   Codex：使用 $understand-project 根据代码和现有需求资料写项目介绍及主要功能说明。
-   Codex：使用 $understand-project 为新开发者写项目上手手册。
-   Claude Code：/understand-docs 为这个 Spring Controller 生成 API 文档。
-   Claude Code：/understand-arch 根据这个项目的代码生成 draw.io 架构图，并导出 PNG。
-   Claude Code：/understand-project 为退款功能写现状、规则、端到端链路和风险说明。
+   Codex：使用 $project-docs 介绍这个项目，附上系统架构图、核心流程图和接口文档。
+   Codex：使用 $project-docs-api 为这个 Spring Controller 生成 API 文档。
+   Codex：使用 $project-docs-diagram 根据这个项目的代码生成 draw.io 架构图，并导出 PNG。
+   Codex：使用 $project-docs-overview 根据代码和现有需求资料写项目介绍及主要功能说明。
+   Codex：使用 $project-docs-overview 为新开发者写项目上手手册。
+   Claude Code：/project-docs 介绍这个项目，附上系统架构图和核心流程图。
+   Claude Code：/project-docs-api 为这个 Spring Controller 生成 API 文档。
+   Claude Code：/project-docs-diagram 根据这个项目的代码生成 draw.io 架构图，并导出 PNG。
+   Claude Code：/project-docs-overview 为退款功能写现状、规则、端到端链路和风险说明。
    ```
 
 生成文档和图时，只需向当前宿主提出需求；内部 Python 脚本由 Skill 按需调用，普通使用者不必运行它们。
@@ -38,15 +40,16 @@
 
 | 需求 | Skill | 主要交付物 |
 |---|---|---|
-| 从 Spring MVC、Feign 或 FastAPI 源码生成接口文档 | [`understand-docs`](SKILL.md) | Markdown、Postman Collection、cURL 示例 |
-| 根据仓库证据绘制架构、流程、时序、ERD 等技术图 | [`understand-arch`](skills/understand-arch/SKILL.md) | 可编辑图源、按需导出的图片或 PDF、验证回执 |
-| 根据源码与需求资料介绍项目、评估架构、描述功能或引导新开发者 | [`understand-project`](skills/understand-project/SKILL.md) | 带来源的项目总览、架构总览、功能说明或上手手册 Markdown |
+| 统一选择入口，或组合交付说明文档、技术图和接口文档 | [`project-docs`](skills/project-docs/SKILL.md) | 按需求组合下列产物 |
+| 从 Spring MVC、Feign 或 FastAPI 源码生成接口文档 | [`project-docs-api`](skills/project-docs-api/SKILL.md) | Markdown、Postman Collection、cURL 示例 |
+| 根据仓库证据绘制架构、流程、时序、ERD 等技术图 | [`project-docs-diagram`](skills/project-docs-diagram/SKILL.md) | 可编辑图源、按需导出的图片或 PDF、验证回执 |
+| 根据源码与需求资料介绍项目、评估架构、描述功能或引导新开发者 | [`project-docs-overview`](skills/project-docs-overview/SKILL.md) | 带来源的项目总览、架构总览、功能说明或上手手册 Markdown |
 
 ## 为什么会有它
 
-Understand Docs 将 API Savior IDEA 插件的 RESTful 文档风格带到 Codex 和命令行，从真实路由、DTO 和枚举声明生成文档。Understand Arch 让“根据代码画架构图”成为可检查的工作：先确定图型和范围，再关联源码证据、生成图源、调用实际渲染引擎，并检查成品。Understand Project 将需求口径、实际实现和验证证据组织成面向读者的项目或功能叙述。
+Project Docs API 将 API Savior IDEA 插件的 RESTful 文档风格带到 Codex 和命令行，从真实路由、DTO 和枚举声明生成文档。Project Docs Diagram 让“根据代码画架构图”成为可检查的工作：先确定图型和范围，再关联源码证据、生成图源、调用实际渲染引擎，并检查成品。Project Docs Overview 将需求口径、实际实现和验证证据组织成面向读者的项目或功能叙述。
 
-三个 Skill 都会保留源码无法确定的部分，不把推断伪装成已验证事实。图源通过引擎验收，也仍需审阅业务解释和视觉效果。
+集合中的所有能力都会保留源码无法确定的部分，不把推断伪装成已验证事实。图源通过引擎验收，也仍需审阅业务解释和视觉效果。
 
 ## 能力与边界
 
@@ -88,11 +91,15 @@ HTML 是 Archify 的交互展示文件；其余三种引擎的 HTML 不是本项
 
 ## 安装与升级
 
-[install.sh](install.sh) 默认把三个 Skill 软链接到 Codex 的 `~/.codex/skills` 和 Claude Code 的 `~/.claude/skills`，并自动安装当前缺失的四个绘图引擎。两边共用本仓库文件，更新一次即可同步更新。安装前会检查所有目标路径，保留无关目录和软链接；本仓库拥有的旧名称链接会迁移。`--uninstall` 只移除本仓库拥有的 Skill 链接，**不会删除**可被其他项目复用的引擎。[Claude Code 官方文档](https://code.claude.com/docs/en/skills#choose-where-skills-load)确认个人 Skill 目录与软链接可用；这里支持的是本地 Claude Code，会话之外的 Claude 云端环境不读取本机目录。
+从 0.4.x 升级时，在原仓库运行 `bash install.sh`。安装器会把本仓库拥有的 `understand-docs`、`understand-arch`、`understand-project` 及更早的旧名称链接迁移到 `project-docs` 集合，之后使用新名称调用；无关同名目录和链接会保留。新入口存在冲突时，安装器会在改动任何宿主链接之前退出。迁移后运行 `bash install.sh --doctor`，再刷新或重启宿主的 Skill 发现。
+
+原有 `UNDERSTAND_PYTHON`、`UNDERSTAND_RENDERER_HOME`、各引擎 CLI 覆盖变量及共享引擎缓存路径继续有效。兼容脚本 `install-arch.sh` 仍只管理 Codex 的绘图入口，目标名称改为 `project-docs-diagram`；完整集合使用 `install.sh`。
+
+[install.sh](install.sh) 默认把统一入口和三个专用 Skill 软链接到 Codex 的 `~/.codex/skills` 和 Claude Code 的 `~/.claude/skills`，并自动安装当前缺失的四个绘图引擎。两边共用本仓库文件，更新一次即可同步更新。安装前会检查所有目标路径，保留无关目录和软链接；本仓库拥有的旧名称链接会迁移。`--uninstall` 只移除本仓库拥有的 Skill 链接，**不会删除**可被其他项目复用的引擎。[Claude Code 官方文档](https://code.claude.com/docs/en/skills#choose-where-skills-load)确认个人 Skill 目录与软链接可用；这里支持的是本地 Claude Code，会话之外的 Claude 云端环境不读取本机目录。
 
 | 安装命令 | 行为 |
 |---|---|
-| `bash install.sh` | Codex、Claude Code 均安装三个 Skill；补齐全部缺失引擎 |
+| `bash install.sh` | Codex、Claude Code 均安装统一入口和三个专用 Skill；补齐全部缺失引擎 |
 | `bash install.sh --engine drawio` | 两个宿主安装 Skill；只补齐 draw.io。`--engine` 可重复指定 |
 | `bash install.sh --no-engines` | 只安装 Skill，并记录“不要自动安装引擎”的选择 |
 | `bash install.sh --host claude --engine mermaid` | 只为 Claude Code 安装 Skill，只补齐 Mermaid |
@@ -113,51 +120,51 @@ HTML 是 Archify 的交互展示文件；其余三种引擎的 HTML 不是本项
 
 安装与内部 CLI 要求 **Python 3.11 或更新版本**；解析 Java 源码还需要 JDK 11 或更新版本。macOS 自动安装 Chrome／Java 需要 Homebrew；Linux 的系统包安装需要 apt 与相应权限。系统缺少这些条件、下载校验失败或格式不可用时会明确报错，不会悄悄换用其他引擎或格式。手动指定 CLI 路径的开发者可查看[Skill 入口说明](#文档)。
 
-## 使用 Understand Docs
+## 使用 Project Docs API
 
 打开目标项目，在 Codex 或 Claude Code 中描述要生成的文档即可。例如：
 
 ```text
-使用 $understand-docs 为当前项目生成完整 API 文档，包含请求、响应、枚举说明、Postman 集合和 cURL 示例。
-使用 $understand-docs 只生成 OrderController 的 createOrder 接口文档。
-使用 $understand-docs 为这个 FastAPI 项目生成接口文档。
+使用 $project-docs-api 为当前项目生成完整 API 文档，包含请求、响应、枚举说明、Postman 集合和 cURL 示例。
+使用 $project-docs-api 只生成 OrderController 的 createOrder 接口文档。
+使用 $project-docs-api 为这个 FastAPI 项目生成接口文档。
 ```
 
-Skill 会定位源码并运行生成器；完整交付物包括 Markdown、Postman Collection 和 cURL 示例。若一个方法对应多个路由，它会明确选择具体 HTTP 方法与路径；若 DTO 来自另一个源码根或 JAR，则需要能访问该依赖。无法从源码确定的类型或示例值会标出，不会猜造真实请求。已有 CodeGraph 或 tree-sitter 可辅助定位，字段与枚举仍由源码解析。手动 CLI 参数保留在 [Understand Docs Skill](SKILL.md) 中，普通使用无需填写源码路径和命令参数。
+Skill 会定位源码并运行生成器；完整交付物包括 Markdown、Postman Collection 和 cURL 示例。若一个方法对应多个路由，它会明确选择具体 HTTP 方法与路径；若 DTO 来自另一个源码根或 JAR，则需要能访问该依赖。无法从源码确定的类型或示例值会标出，不会猜造真实请求。已有 CodeGraph 或 tree-sitter 可辅助定位，字段与枚举仍由源码解析。手动 CLI 参数保留在 [Project Docs API Skill](skills/project-docs-api/SKILL.md) 中，普通使用无需填写源码路径和命令参数。
 
-## 使用 Understand Project
+## 使用 Project Docs Overview
 
-在目标项目中描述读者和范围即可。Skill 根据[项目总览模板](skills/understand-project/assets/project-overview.md)、[功能说明模板](skills/understand-project/assets/feature-description.md)、[架构总览模板](skills/understand-project/assets/architecture-overview.md)或[开发者上手手册模板](skills/understand-project/assets/developer-guide.md)起稿，核对需求资料、代码、测试与实际命令，再生成带来源的 Markdown。默认保留所选模板的二级章节及顺序，资料不足的地方明确标为待确认；只有用户要求其他框架时才调整。架构总览吸收 PDLC 的系统全景、通信、数据、可观测性、扩展性与改进建议结构，并要求系统全景图和核心流程图；跨系统关系复杂时再补系统上下文图。图可嵌入本地图片并链接可编辑图源，或在支持 Mermaid 的交付环境中嵌入经过渲染检查的源码。评分需要逐项依据，缺少运行资料时写待评估。开发者手册包含从入口到关键规则与复杂模块的推荐阅读路线。默认写到目标仓库之外，除非明确要求更新仓库文档或发布到飞书。明确要求按 PDLC 阶段产出时，沿用 PDLC 自己的模板、目录与状态流程。
+在目标项目中描述读者和范围即可。Skill 根据[项目总览模板](skills/project-docs-overview/assets/project-overview.md)、[功能说明模板](skills/project-docs-overview/assets/feature-description.md)、[架构总览模板](skills/project-docs-overview/assets/architecture-overview.md)或[开发者上手手册模板](skills/project-docs-overview/assets/developer-guide.md)起稿，核对需求资料、代码、测试与实际命令，再生成带来源的 Markdown。默认保留所选模板的二级章节及顺序，资料不足的地方明确标为待确认；只有用户要求其他框架时才调整。架构总览吸收 PDLC 的系统全景、通信、数据、可观测性、扩展性与改进建议结构，并要求系统全景图和核心流程图；跨系统关系复杂时再补系统上下文图。图可嵌入本地图片并链接可编辑图源，或在支持 Mermaid 的交付环境中嵌入经过渲染检查的源码。评分需要逐项依据，缺少运行资料时写待评估。开发者手册包含从入口到关键规则与复杂模块的推荐阅读路线。默认写到目标仓库之外，除非明确要求更新仓库文档或发布到飞书。明确要求按 PDLC 阶段产出时，沿用 PDLC 自己的模板、目录与状态流程。
 
 ```text
-使用 $understand-project 为这个项目写一份给新同事看的介绍：业务目标、主要功能、端到端链路和模块职责。
-使用 $understand-project 说明退款功能的现状、判据表、改动点、验证场景与风险。
-使用 $understand-project 为新开发者生成上手手册，写明环境、启动、测试、文档索引和常见问题。
-使用 $understand-project 为这个系统写架构总览文档，包含系统全景架构图、核心流程图，以及模块边界、通信、数据与架构风险。
-使用 $understand-project 根据代码和最新 PRD 更新已有的项目介绍，保留人工补充内容。
+使用 $project-docs-overview 为这个项目写一份给新同事看的介绍：业务目标、主要功能、端到端链路和模块职责。
+使用 $project-docs-overview 说明退款功能的现状、判据表、改动点、验证场景与风险。
+使用 $project-docs-overview 为新开发者生成上手手册，写明环境、启动、测试、文档索引和常见问题。
+使用 $project-docs-overview 为这个系统写架构总览文档，包含系统全景架构图、核心流程图，以及模块边界、通信、数据与架构风险。
+使用 $project-docs-overview 根据代码和最新 PRD 更新已有的项目介绍，保留人工补充内容。
 ```
 
-只有源码时可以说明实际实现，不能从代码猜测产品决策、工期或上线状态；缺失口径会列为待确认。上手手册只列项目实际支持的命令，不假设存在 PDLC 的 `make status` 等入口。复杂链路可配图，接口字段细节继续交给 `understand-docs`。架构总览交付时，Markdown、导出图片、可编辑图源与图形证据放在同一交付目录及其子目录内并使用相对链接；校验命令加 `--check-diagrams`，会调用已安装的官方引擎实际渲染 Mermaid 和链接的图源，并检查图片内容及路径。传入 `--source` 时，原生图需保留同目录的 v2 `diagram.evidence.json`；IR `deliver` 图需保留含 `manifest.json` 的完整 bundle。图与源码所表达的业务关系仍需人工复核。
+只有源码时可以说明实际实现，不能从代码猜测产品决策、工期或上线状态；缺失口径会列为待确认。上手手册只列项目实际支持的命令，不假设存在 PDLC 的 `make status` 等入口。复杂链路可配图，接口字段细节继续交给 `project-docs-api`。架构总览交付时，Markdown、导出图片、可编辑图源与图形证据放在同一交付目录及其子目录内并使用相对链接；校验命令加 `--check-diagrams`，会调用已安装的官方引擎实际渲染 Mermaid 和链接的图源，并检查图片内容及路径。传入 `--source` 时，原生图需保留同目录的 v2 `diagram.evidence.json`；IR `deliver` 图需保留含 `manifest.json` 的完整 bundle。图与源码所表达的业务关系仍需人工复核。
 
 写作前可用 [`project_doc_context.py`](scripts/project_doc_context.py) 按文件、符号或业务词提取聚焦上下文；它只引用已核实为新鲜的 understand-anything 图谱，过期图谱会被排除。更新已有文档时，[`project_doc_impact.py`](scripts/project_doc_impact.py) 根据文档记录的源码版本和引用，列出直接受影响章节及仍需人工检查的未映射文件。交付前以 `--source <目标仓库>` 运行 [`validate_project_doc.py`](scripts/validate_project_doc.py)，检查章节、版本、每章来源和本地来源行号；架构模式还检查必备图及本地图片路径，并要求五维评估完整、给分时逐项提供来源。业务解释与图示语义仍需人工核对。
 
-## 使用 Understand Arch
+## 使用 Project Docs Diagram
 
 在 Codex 或 Claude Code 中说“根据代码生成架构图”即可开始。Skill 会按[绘图规范](docs/DIAGRAM_STANDARD.md)确定视图和引擎；明确要求 C4、流程图、泳道图、时序图或其他图型时，会采用对应记法。参考图和长提示词不是必需输入。
 
-可以直接说目标，也可以显式触发 Skill 并指定引擎、图型、导出格式。下列示例使用 Codex 的 `$understand-arch`；在 Claude Code 中将其写作 `/understand-arch`：
+可以直接说目标，也可以显式触发 Skill 并指定引擎、图型、导出格式。下列示例使用 Codex 的 `$project-docs-diagram`；在 Claude Code 中将其写作 `/project-docs-diagram`：
 
 ```text
 根据这个项目的代码生成架构图，导出 PNG。
-使用 $understand-arch 为 FA 模块画 draw.io 架构总览，并给复杂链路配细节图，导出 PNG。
-使用 $understand-arch 根据订单调用链画 PlantUML 时序图，保留 .puml，导出 PDF。
-使用 $understand-arch 根据状态转换画 Mermaid 状态图，保留 .mmd，导出 SVG。
-使用 $understand-arch 根据审批流程画 Archify workflow，保留 JSON 和交互 HTML，导出 WebP。
+使用 $project-docs-diagram 为 FA 模块画 draw.io 架构总览，并给复杂链路配细节图，导出 PNG。
+使用 $project-docs-diagram 根据订单调用链画 PlantUML 时序图，保留 .puml，导出 PDF。
+使用 $project-docs-diagram 根据状态转换画 Mermaid 状态图，保留 .mmd，导出 SVG。
+使用 $project-docs-diagram 根据审批流程画 Archify workflow，保留 JSON 和交互 HTML，导出 WebP。
 ```
 
 未指定引擎时，Skill 先按问题选图型，再选能表达该图型的引擎；项目／模块架构总览默认用 draw.io。明确指定引擎或导出格式时按要求执行；不支持的组合会报告错误。以上 Mermaid 状态图和 Archify workflow 走**官方原生图源通道**，不是 IR v2 转换。
 
-Skill 会读取源码和可用的 CodeGraph 信息，选择合适的图型，生成可编辑图源，调用已安装的官方引擎导出指定格式，再核对源码证据与实际成图。已实现的图型使用[分型 IR v2](skills/understand-arch/references/diagram-view-ir.md)；其他官方图型使用引擎原生文件和[证据清单](skills/understand-arch/references/native-diagrams.md)。用户无需手写 IR、JSON 或执行 Python 命令。需要绕过 Codex 手动调用脚本时，参阅 [Understand Arch Skill](skills/understand-arch/SKILL.md) 中的命令行流程。
+Skill 会读取源码和可用的 CodeGraph 信息，选择合适的图型，生成可编辑图源，调用已安装的官方引擎导出指定格式，再核对源码证据与实际成图。已实现的图型使用[分型 IR v2](skills/project-docs-diagram/references/diagram-view-ir.md)；其他官方图型使用引擎原生文件和[证据清单](skills/project-docs-diagram/references/native-diagrams.md)。用户无需手写 IR、JSON 或执行 Python 命令。需要绕过 Codex 手动调用脚本时，参阅 [Project Docs Diagram Skill](skills/project-docs-diagram/SKILL.md) 中的命令行流程。
 
 ### 引擎如何参与生成
 
@@ -166,13 +173,14 @@ Skill 会读取源码和可用的 CodeGraph 信息，选择合适的图型，生
 3. **调用官方引擎**：Mermaid、PlantUML、draw.io 解析各自图源并导出所需格式；Archify 验证 typed JSON，先生成交互 HTML，再由官方查看器导出图片和 WebM，或由浏览器打印 PDF。Skill 不把一个引擎的图偷偷交给另一个引擎处理。
 4. **核查与交付**：源码图核对引用位置；架构总览连同声明的细节图一起交付。引擎通过只证明图源可解析、文件可导出；业务解释和图面效果仍需审阅。
 
-证据清单的 `claimCoverage: complete` 表示图中材料已逐项关联源码，`claimSemantics: not_proven` 则表示业务解释仍需复核。旧[架构 IR v1](skills/understand-arch/references/architecture-ir.md)继续兼容。
+证据清单的 `claimCoverage: complete` 表示图中材料已逐项关联源码，`claimSemantics: not_proven` 则表示业务解释仍需复核。旧[架构 IR v1](skills/project-docs-diagram/references/architecture-ir.md)继续兼容。
 
 ## 文档
 
-- [Understand Docs Skill](SKILL.md) · [API Document IR](references/api-document-ir.md)
-- [Understand Arch Skill](skills/understand-arch/SKILL.md) · [图型与证据规范](docs/DIAGRAM_STANDARD.md)
-- [Understand Project Skill](skills/understand-project/SKILL.md)
+- [Project Docs 统一入口](skills/project-docs/SKILL.md)
+- [Project Docs API Skill](skills/project-docs-api/SKILL.md) · [API Document IR](references/api-document-ir.md)
+- [Project Docs Diagram Skill](skills/project-docs-diagram/SKILL.md) · [图型与证据规范](docs/DIAGRAM_STANDARD.md)
+- [Project Docs Overview Skill](skills/project-docs-overview/SKILL.md)
 - [渲染引擎能力审计](docs/RENDERER_CAPABILITY_AUDIT.md) · [draw.io 模板取舍](docs/ARCHITECTURE_TEMPLATE_RESEARCH.md)
 - [变更日志](CHANGELOG.md)
 

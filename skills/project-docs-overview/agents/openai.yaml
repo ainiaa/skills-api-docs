@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Docs Overview"
+  short_description: "Write project, feature, architecture and onboarding docs"
+  default_prompt: "Use $project-docs-overview to write source-backed project, feature, architecture, or onboarding documentation."

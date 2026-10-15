@@ -89,7 +89,7 @@ def _rows(stage, items):
 def render_landscape(ir):
     """Render role layers and a numbered relation register on a dynamic canvas."""
     by_stage = _stage_items(ir)
-    mx = ET.Element("mxfile", {"host": "understand-arch"})
+    mx = ET.Element("mxfile", {"host": "project-docs-diagram"})
     diagram = ET.SubElement(mx, "diagram", {"id": "architecture-landscape", "name": ir["title"]})
     model = ET.SubElement(diagram, "mxGraphModel", {"page": "1", "pageScale": "1",
                                                "pageWidth": str(PAGE_WIDTH), "pageHeight": "1200",

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Understand Docs"
-  short_description: "Generate API docs through source adapters"
-  default_prompt: "Use $understand-docs to generate API documentation from the supplied Java/Spring or Python/FastAPI source tree."

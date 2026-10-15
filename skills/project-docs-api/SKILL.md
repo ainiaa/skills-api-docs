@@ -1,21 +1,21 @@
 ---
-name: understand-docs
+name: project-docs-api
 description: Generate API documentation from Java Spring MVC, Feign, or Python FastAPI source, without IntelliJ IDEA. Use when asked for Markdown, Postman collections, or cURL examples from routes and request/response declarations.
 ---
 
-# Understand Docs
+# Project Docs API
 
-Generate documentation with the API Savior RESTful Markdown contract from controller/Feign mapping annotations and real DTO declarations. Use Python 3.11 or newer:
+Generate documentation with the API Savior RESTful Markdown contract from controller/Feign mapping annotations and real DTO declarations. Resolve this skill directory to its real path before using shared scripts or references, including when installed through a symlink. Use Python 3.11 or newer:
 
 ```bash
-python3 <skill-directory>/scripts/generate_api_docs.py \
+python3 <resolved-skill-directory>/../../scripts/generate_api_docs.py \
   --source <java-source-root> --output <output-directory> --base-url <optional-base-url>
 ```
 
 It writes `api-docs.md`, `postman-collection.json`, and `curl.sh`.
 
 - Pass one or more source roots with repeated `--source`.
-- The generator is organized as `language adapter → API document IR → renderer`. Java/Spring and Python/FastAPI adapters are available; Markdown, Postman, and cURL renderers consume only the language-neutral IR. Use `--language python` for FastAPI source. See [the IR contract](references/api-document-ir.md) before adding another language or framework.
+- The generator is organized as `language adapter → API document IR → renderer`. Java/Spring and Python/FastAPI adapters are available; Markdown, Postman, and cURL renderers consume only the language-neutral IR. Use `--language python` for FastAPI source. See [the IR contract](../../references/api-document-ir.md) before adding another language or framework.
 - Require JDK 11 or newer for the current Java adapter. It uses the JDK AST API, not regular expressions, so it distinguishes DTO fields from local variables and supports `@RestController`, `@FeignClient(path = ...)`, class-level mappings, and source-defined composed Spring mappings.
 - The FastAPI adapter handles `APIRouter` prefixes and `include_router`, `response_model`, package/relative imports, and request parameters declared by source-defined `Depends` functions, including route, router, include, and app dependencies. It preserves unresolved or ambiguous types rather than guessing.
 - For Gradle projects, a selected Controller/Feign client automatically includes direct project-module `src/main/java` dependencies from either Groovy or Kotlin Gradle DSL. Pass additional `--source` roots for DTOs outside those modules; pass `--classpath <jar>` to supplement binary-only DTOs.

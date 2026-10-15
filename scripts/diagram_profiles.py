@@ -271,7 +271,7 @@ def _safe(value):
 
 
 def _xml(ir, title, legend=""):
-    mx = ET.Element("mxfile", {"host": "understand-arch"})
+    mx = ET.Element("mxfile", {"host": "project-docs-diagram"})
     diagram = ET.SubElement(mx, "diagram", {"id": "view", "name": title})
     model = ET.SubElement(diagram, "mxGraphModel", {"page": "1", "pageScale": "1",
                                                "pageWidth": "1920", "pageHeight": "1200"})

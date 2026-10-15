@@ -1,9 +1,9 @@
 ---
-name: understand-arch
+name: project-docs-diagram
 description: Create source-backed technical diagrams from a repository, or validate and export native Mermaid, PlantUML, draw.io, and Archify diagrams; not for endpoint API documentation.
 ---
 
-# Understand Arch
+# Project Docs Diagram
 
 Produce auditable diagrams from repository evidence. A short request such as “根据代码生成架构图” is sufficient; infer scope, view, engine, and export without requiring a reference image or a detailed prompt. The agent interprets architecture and business meaning; scripts validate source anchors and supported diagram semantics. Keep generated files outside the analyzed repository unless the user asks to commit them. Read [the diagram standard](../../docs/DIAGRAM_STANDARD.md) when selecting a profile. The draw.io landscape theme and GitHub template decision are documented in [the template research](../../docs/ARCHITECTURE_TEMPLATE_RESEARCH.md).
 

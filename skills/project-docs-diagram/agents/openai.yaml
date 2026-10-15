@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Docs Diagram"
+  short_description: "Create and validate technical diagrams from source"
+  default_prompt: "Use $project-docs-diagram to create an editable technical diagram from the supplied repository and export the requested format."

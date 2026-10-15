@@ -7,7 +7,7 @@ from pathlib import Path
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 INSTALLER = REPOSITORY / "install-arch.sh"
-SKILL = REPOSITORY / "skills" / "understand-arch"
+SKILL = REPOSITORY / "skills" / "project-docs-diagram"
 
 
 class InstallArchTests(unittest.TestCase):
@@ -16,7 +16,7 @@ class InstallArchTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.environment = dict(os.environ, CODEX_HOME=str(self.root / "codex"))
-        self.target = self.root / "codex" / "skills" / "understand-arch"
+        self.target = self.root / "codex" / "skills" / "project-docs-diagram"
         self.old_target = self.root / "codex" / "skills" / "understand-api-arch"
 
     def run_installer(self, *args):
@@ -29,6 +29,7 @@ class InstallArchTests(unittest.TestCase):
         self.assertEqual(self.run_installer("--doctor").returncode, 0)
         self.assertEqual(self.run_installer("--uninstall").returncode, 0)
         self.assertFalse(self.target.is_symlink())
+        self.assertFalse((self.target.parent / "understand-arch").is_symlink())
 
     def test_preserves_unrelated_target(self):
         self.target.parent.mkdir(parents=True)
@@ -43,6 +44,21 @@ class InstallArchTests(unittest.TestCase):
         self.assertEqual(self.run_installer().returncode, 0)
         self.assertEqual(self.target.resolve(), SKILL)
         self.assertFalse(self.old_target.is_symlink())
+
+    def test_migrates_relative_previous_name_and_preserves_unrelated_old_name(self):
+        self.target.parent.mkdir(parents=True)
+        previous = self.target.parent / "understand-arch"
+        previous.symlink_to(os.path.relpath(REPOSITORY / "skills" / "understand-arch", previous.parent.resolve()))
+        unrelated = self.root / "another skill"
+        unrelated.mkdir()
+        self.old_target.symlink_to(unrelated)
+
+        self.assertEqual(self.run_installer().returncode, 0)
+        self.assertFalse(previous.is_symlink())
+        self.assertEqual(self.target.resolve(), SKILL)
+        self.assertEqual(self.old_target.resolve(), unrelated.resolve())
+        self.assertEqual(self.run_installer("--uninstall").returncode, 0)
+        self.assertEqual(self.old_target.resolve(), unrelated.resolve())
 
 
 if __name__ == "__main__":
