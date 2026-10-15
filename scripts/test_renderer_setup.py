@@ -68,6 +68,10 @@ class EnginePathTests(unittest.TestCase):
 
 class RendererInstallerTests(unittest.TestCase):
     def setUp(self):
+        overrides = patch.dict(os.environ, {f"{engine}_OFFICIAL_CLI": ""
+                                           for engine in ("MERMAID", "PLANTUML", "DRAWIO", "ARCHIFY")})
+        overrides.start()
+        self.addCleanup(overrides.stop)
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.home = Path(self.temporary.name)
