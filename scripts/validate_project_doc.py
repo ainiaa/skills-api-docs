@@ -1,4 +1,4 @@
-"""Check the fixed outline of an Understand Project Markdown document."""
+"""Check the fixed outline of a Project Docs Overview Markdown document."""
 
 import argparse
 import json
@@ -268,7 +268,7 @@ def _source_problems(content, sections, source):
 
 
 def validate(kind, content, source=None, document=None, check_diagrams=False):
-    template = Path(__file__).resolve().parents[1] / "skills" / "understand-project" / "assets" / TEMPLATES[kind]
+    template = Path(__file__).resolve().parents[1] / "skills" / "project-docs-overview" / "assets" / TEMPLATES[kind]
     template_titles, template_sections = _outline(template.read_text(encoding="utf-8"))
     titles, sections = _outline(content)
     problems = []

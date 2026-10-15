@@ -1,51 +1,74 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPOSITORY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-SOURCE="$REPOSITORY/skills/understand-arch"
-TARGET="${CODEX_HOME:-${HOME}/.codex}/skills/understand-arch"
-OLD_SOURCE="$REPOSITORY/skills/understand-api-arch"
-OLD_TARGET="${CODEX_HOME:-${HOME}/.codex}/skills/understand-api-arch"
+REPOSITORY="$(cd -P -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+SOURCE="$REPOSITORY/skills/project-docs-diagram"
+TARGET="${CODEX_HOME:-${HOME}/.codex}/skills/project-docs-diagram"
+OLD_NAMES=(understand-api-arch understand-arch)
+OLD_SOURCES=("$REPOSITORY/skills/understand-api-arch" "$REPOSITORY/skills/understand-arch")
 
 same_install() {
   [[ -L "$TARGET" ]] || return 1
-  [[ "$(cd "$TARGET" 2>/dev/null && pwd -P)" == "$SOURCE" ]]
+  [[ "$(cd -P -- "$TARGET" 2>/dev/null && pwd -P)" == "$SOURCE" ]]
 }
 
 old_install() {
-  [[ -L "$OLD_TARGET" && "$(readlink "$OLD_TARGET")" == "$OLD_SOURCE" ]]
+  local target="$1" source="$2" link parent suffix
+  [[ -L "$target" ]] || return 1
+  link="$(readlink "$target")"
+  [[ "$link" == /* ]] || link="$(dirname "$target")/$link"
+  parent="$(dirname "$link")"
+  suffix="$(basename "$link")"
+  while [[ ! -e "$parent" && ! -L "$parent" ]]; do
+    suffix="$(basename "$parent")/$suffix"
+    parent="$(dirname "$parent")"
+  done
+  parent="$(cd -P -- "$parent" 2>/dev/null && pwd -P)" || return 1
+  [[ "$parent/$suffix" == "$source" ]]
+}
+
+clean_old_links() {
+  local index target
+  for index in "${!OLD_NAMES[@]}"; do
+    target="$(dirname "$TARGET")/${OLD_NAMES[$index]}"
+    if old_install "$target" "${OLD_SOURCES[$index]}"; then
+      if [[ "${1:-}" == --check ]]; then return 1; fi
+      rm "$target"
+      echo "Removed old skill link → $target"
+    fi
+  done
 }
 
 case "${1:-}" in
   ""|--install)
     [[ -f "$SOURCE/SKILL.md" && -f "$REPOSITORY/scripts/generate_architecture.py" ]] || {
-      echo "Error: incomplete understand-arch checkout" >&2; exit 1;
+      echo "Error: incomplete project-docs-diagram checkout" >&2; exit 1;
     }
     if ! same_install && [[ -e "$TARGET" || -L "$TARGET" ]]; then
       echo "Error: refusing to replace existing path: $TARGET" >&2; exit 1
     fi
     if same_install; then
-      echo "understand-arch is already installed → $TARGET"
+      echo "project-docs-diagram is already installed → $TARGET"
     else
       mkdir -p "$(dirname "$TARGET")"
       ln -s "$SOURCE" "$TARGET"
-      echo "Installed understand-arch → $TARGET"
+      echo "Installed project-docs-diagram → $TARGET"
     fi
-    if old_install; then rm "$OLD_TARGET"; echo "Removed old skill link → $OLD_TARGET"; fi
+    clean_old_links
     ;;
   --doctor)
-    if same_install && ! old_install; then echo "understand-arch is installed → $TARGET"; else
-      echo "understand-arch is not cleanly linked to this checkout: $TARGET" >&2; exit 1
+    if same_install && [[ -f "$SOURCE/SKILL.md" && -r "$SOURCE/SKILL.md" && -s "$SOURCE/SKILL.md" ]] && clean_old_links --check; then echo "project-docs-diagram is installed → $TARGET"; else
+      echo "project-docs-diagram is not cleanly linked to this checkout: $TARGET" >&2; exit 1
     fi
     ;;
   --uninstall)
-    if same_install; then rm "$TARGET"; echo "Uninstalled understand-arch → $TARGET"
+    if same_install || old_install "$TARGET" "$SOURCE"; then rm "$TARGET"; echo "Uninstalled project-docs-diagram → $TARGET"
     elif [[ -e "$TARGET" || -L "$TARGET" ]]; then
       echo "Error: refusing to remove unrelated path: $TARGET" >&2; exit 1
     else
-      echo "understand-arch is not installed at $TARGET"
+      echo "project-docs-diagram is not installed at $TARGET"
     fi
-    if old_install; then rm "$OLD_TARGET"; echo "Removed old skill link → $OLD_TARGET"; fi
+    clean_old_links
     ;;
   --help|-h)
     echo "Usage: bash install-arch.sh [--install|--doctor|--uninstall]"

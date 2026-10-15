@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install only missing official renderer CLIs into a user-owned directory."""
+"""Install missing renderers or explicitly synchronize the collection's pinned CLI versions."""
 
 import argparse
 import hashlib
@@ -33,6 +33,7 @@ class RendererInstaller:
     def __init__(self, home=None):
         self.home = Path(home) if home is not None else renderer_home()
         self.bin = self.home / "bin"
+        self.updating = False
 
     @staticmethod
     def _run(command, env=None):
@@ -63,18 +64,60 @@ class RendererInstaller:
         if target.is_symlink() and target.resolve() == source.resolve():
             return target
         if target.exists() or target.is_symlink():
-            raise RuntimeError(f"refusing to replace existing renderer path: {target}")
-        target.symlink_to(source)
+            if not self.updating or not self._owned_target(name, target):
+                raise RuntimeError(f"refusing to replace existing renderer path: {target}")
+            with tempfile.TemporaryDirectory(dir=self.bin) as temporary:
+                staged = Path(temporary) / name
+                staged.symlink_to(source)
+                staged.replace(target)
+        else:
+            target.symlink_to(source)
         return target
 
     def _publish_wrapper(self, name, command):
         self.bin.mkdir(parents=True, exist_ok=True)
         target = self.bin / name
+        content = "#!/bin/sh\nexec " + command + ' "$@"\n'
         if target.exists() or target.is_symlink():
-            raise RuntimeError(f"refusing to replace existing renderer path: {target}")
-        target.write_text("#!/bin/sh\nexec " + command + ' "$@"\n', encoding="utf-8")
-        target.chmod(0o755)
+            try:
+                if target.is_file() and target.read_text(encoding="utf-8") == content:
+                    return target
+            except (OSError, UnicodeError):
+                pass
+            if not self.updating or not self._owned_target(name, target):
+                raise RuntimeError(f"refusing to replace existing renderer path: {target}")
+        with tempfile.TemporaryDirectory(dir=self.bin) as temporary:
+            staged = Path(temporary) / name
+            staged.write_text(content, encoding="utf-8")
+            staged.chmod(0o755)
+            staged.replace(target)
         return target
+
+    def _owned_target(self, name, target):
+        engine = next(engine for engine, binary in ENGINE_BINARIES.items() if binary == name)
+        managed = (self.home / engine).resolve()
+        if target.is_symlink():
+            return target.resolve().is_relative_to(managed)
+        try:
+            lines = target.read_text(encoding="utf-8").splitlines()
+            if len(lines) != 2 or lines[0] != "#!/bin/sh":
+                return False
+            words = shlex.split(lines[1])
+        except (OSError, UnicodeError, ValueError):
+            return False
+        if len(words) < 3 or words[0] != "exec" or words[-1] != "$@":
+            return False
+        if name == "plantuml":
+            return (len(words) == 5 and words[2] == "-jar" and Path(words[3]).name == "plantuml.jar"
+                    and Path(words[3]).resolve().is_relative_to(managed))
+        if name == "drawio":
+            command = words[1:-1]
+            if len(command) == 3 and Path(command[0]).name == "xvfb-run" and command[1] == "-a":
+                command = command[2:]
+            known = {Path("/usr/bin/drawio"), Path("/Applications/draw.io.app/Contents/MacOS/draw.io"),
+                     Path.home() / "Applications/draw.io.app/Contents/MacOS/draw.io"}
+            return len(command) == 1 and (Path(command[0]) in known or Path(command[0]).resolve().is_relative_to(managed))
+        return False
 
     def _ensure_node(self, minimum=(22, 13)):
         prepare_runtime()
@@ -197,9 +240,10 @@ class RendererInstaller:
         return self._publish_wrapper("plantuml", f"{shlex.quote(str(java))} -jar {shlex.quote(str(jar))}")
 
     def _find_drawio_app(self):
-        for app in (Path("/Applications/draw.io.app"),
-                    Path.home() / "Applications/draw.io.app",
-                    self.home / "drawio" / DRAWIO_VERSION / "draw.io.app"):
+        managed = self.home / "drawio" / DRAWIO_VERSION / "draw.io.app"
+        apps = (managed,) if self.updating else (Path("/Applications/draw.io.app"),
+                                                Path.home() / "Applications/draw.io.app", managed)
+        for app in apps:
             if (app / "Contents/MacOS/draw.io").is_file():
                 return app
         return None
@@ -242,7 +286,7 @@ class RendererInstaller:
             if platform.machine().lower() not in {"x86_64", "amd64"}:
                 raise RuntimeError("automatic draw.io Desktop installation on Linux requires x86-64")
             executable = Path("/usr/bin/drawio")
-            if not executable.is_file():
+            if self.updating or not executable.is_file():
                 self.home.mkdir(parents=True, exist_ok=True)
                 with tempfile.TemporaryDirectory(dir=self.home) as temporary:
                     package = Path(temporary) / "drawio.deb"
@@ -284,14 +328,21 @@ class RendererInstaller:
         self._ensure_chrome()
         return self._publish_link("archify", cli)
 
-    def ensure(self, engine):
+    def ensure(self, engine, update=False):
         if engine not in ENGINE_BINARIES:
             raise ValueError(f"unknown renderer: {engine}")
-        existing = find_engine(engine)
+        self.updating = update
+        configured = os.environ.get(f"{engine.upper()}_OFFICIAL_CLI")
+        existing = find_engine(engine) if not update or configured else None
         if existing:
             if engine == "archify":
                 self._ensure_chrome()
             return str(existing)
+        if update and configured:
+            raise RuntimeError(f"configured {engine} CLI is unavailable: {configured}")
+        target = self.bin / ENGINE_BINARIES[engine]
+        if update and (target.exists() or target.is_symlink()) and not self._owned_target(ENGINE_BINARIES[engine], target):
+            raise RuntimeError(f"refusing to replace existing renderer path: {target}")
         installed = getattr(self, f"_install_{engine}")()
         return str(installed)
 
@@ -302,25 +353,32 @@ def main(argv=None):
     parser.add_argument("--engine", action="append", choices=tuple(ENGINE_BINARIES))
     parser.add_argument("--doctor", action="store_true", help="check selected renderer commands without installing")
     parser.add_argument("--auto", action="store_true", help="respect an explicit --no-engines preference")
+    parser.add_argument("--update", action="store_true", help="synchronize pinned versions; retain explicit CLI overrides")
     args = parser.parse_args(argv)
+    if args.update and (args.doctor or args.auto):
+        parser.error("--update cannot be combined with --doctor or --auto")
     selected = list(dict.fromkeys(args.engine or ENGINE_BINARIES))
     installer = RendererInstaller()
     marker = installer.home / "no-auto-install"
     if args.auto and marker.is_file():
         print("Renderer auto installation is disabled by --no-engines", file=sys.stderr)
         return 1
-    try:
-        for engine in selected:
-            path = find_engine(engine) if args.doctor else installer.ensure(engine)
+    status = 0
+    for engine in selected:
+        try:
+            path = find_engine(engine) if args.doctor else installer.ensure(engine, update=args.update)
             if not path:
                 raise RuntimeError(f"{engine} is not installed; run bash install.sh --engine {engine}")
-            print(f"{engine}: {path}")
-    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
-        print(f"Renderer setup failed: {error}", file=sys.stderr)
-        return 1
+            retained = args.update and os.environ.get(f"{engine.upper()}_OFFICIAL_CLI")
+            print(f"{engine}: {'retained explicit CLI override ' if retained else ''}{path}")
+        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            print(f"Renderer setup failed: {error}", file=sys.stderr)
+            if not args.doctor:
+                return 1
+            status = 1
     if not args.doctor and not args.auto:
         marker.unlink(missing_ok=True)
-    return 0
+    return status
 
 
 if __name__ == "__main__":

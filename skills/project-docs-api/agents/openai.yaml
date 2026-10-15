@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Docs API"
+  short_description: "Generate API docs through source adapters"
+  default_prompt: "Use $project-docs-api to generate API documentation from the supplied Java/Spring or Python/FastAPI source tree."

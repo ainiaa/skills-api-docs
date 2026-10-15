@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Docs"
+  short_description: "Route project documentation and diagram requests"
+  default_prompt: "Use $project-docs to create the requested project documentation and technical diagrams from repository evidence."

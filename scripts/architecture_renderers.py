@@ -69,7 +69,7 @@ def render_drawio(ir):
         cells.append(f'<mxCell id="external_R{index}" value="{xml_escape(external.get("kind", "external"), quote=True)}" style="edgeStyle=orthogonalEdgeStyle;html=0;dashed=1;" edge="1" parent="1" source="{domain_by_id[external["domain"]]}" target="E{index}"><mxGeometry relative="1" as="geometry"/></mxCell>')
     for index, relation in enumerate(ir["relations"]):
         cells.append(f'<mxCell id="R{index}" value="{xml_escape(relation["label"], quote=True)}" style="edgeStyle=orthogonalEdgeStyle;html=0;" edge="1" parent="1" source="{domain_by_id[relation["from"]]}" target="{domain_by_id[relation["to"]]}"><mxGeometry relative="1" as="geometry"/></mxCell>')
-    return '<mxfile host="understand-arch"><diagram id="architecture" name="Architecture"><mxGraphModel><root>' + "".join(cells) + '</root></mxGraphModel></diagram></mxfile>\n'
+    return '<mxfile host="project-docs-diagram"><diagram id="architecture" name="Architecture"><mxGraphModel><root>' + "".join(cells) + '</root></mxGraphModel></diagram></mxfile>\n'
 
 
 def render_archify(ir):
