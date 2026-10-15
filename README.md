@@ -138,7 +138,17 @@ pi 原仓库 `badlogic/pi-mono` 已迁移到 `earendil-works/pi`，见[作者说
 
 卸载按软链接的物理目标识别本仓库归属；即使源 Skill 目录已丢失，仍可清理本仓库拥有的失效链接。含软链接和 `..` 的路径按实际文件系统解析，不把指向其他目录的链接当成本仓库入口；无关目录和链接继续保留。
 
-新增宿主已覆盖隔离目录中的安装、幂等、升级转发、诊断、卸载、旧名迁移、路径冲突和原生目录覆盖回归。2026-10-15 还在临时用户目录中，用 Gemini CLI 0.64.0 的 `skills list`、Grok Build 1.0.52 的 `inspect --json` 和 pi 1.2.0 的原生加载器验证了安装后四个 Skill 均可见、卸载后均消失；未调用模型或改动真实用户配置。ZCode、DSH、OpenCode 的真实宿主加载及六个宿主的模型执行仍未验证；云端或远程沙箱也不保证能读取本机路径。
+新增宿主已覆盖隔离目录中的安装、幂等、升级转发、诊断、卸载、旧名迁移、路径冲突和原生目录覆盖回归。2026-10-15 在临时用户目录中，用 Gemini CLI 0.64.0 的 `skills list`、Grok Build 1.0.52 的 `inspect --json` 和 pi 1.2.0 的原生加载器验证了安装后四个 Skill 均可见、卸载后均消失。
+
+同日在 macOS arm64 补齐以下原生集成验收，均按“安装前无目标技能 → 安装并诊断 → 发现及加载四份正文 → 卸载后无目标技能”检查；正文逐字对照本仓库，且核对原生来源路径。三项测试通过，包含五轮独立安装／卸载生命周期和二十份正文加载：
+
+| 宿主版本 | 实际验收入口 | 目录覆盖 |
+| --- | --- | --- |
+| ZCode Desktop 3.14.5 内置 CLI 0.16.9 | `skills list --json`、`skills inspect <name> --json`；无截断，卸载后加载明确失败 | `~/.zcode/skills` |
+| DSH 0.2.0-rc.2 | 官方 Cordis 4.0.4 挂载 `dsh-skill` 和 `dsh-skill-filesystem`，实际调用 `ctx.skills.snapshot()`、`ctx.skills.get()`；目录完整，来源为 `user-dsh`，卸载后正文不可加载 | 默认目录、含空格及 `~/` 的 `DSH_HOME` |
+| OpenCode 1.19.0 | `debug skill` 返回目录和完整正文，卸载后目录不再包含目标技能 | 默认目录、含空格的绝对 `XDG_CONFIG_HOME` |
+
+验收未调用模型，DSH 验收范围是官方原生注册表／provider，未启动 Web UI 或模型工具链。所有验收使用临时 `HOME`、工作目录与配置／缓存目录；未改动真实用户配置。六个宿主的模型执行仍未验证；云端或远程沙箱也不保证能读取本机路径。
 
 例如只管理 pi：
 
@@ -238,6 +248,17 @@ Skill 会读取源码和可用的 CodeGraph 信息，选择合适的图型，生
 ```bash
 python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
+
+原生宿主验收默认跳过；准备好对应的官方运行时后，显式指定路径再运行：
+
+```bash
+ZCODE_NATIVE_CLI=/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs \
+DSH_NATIVE_MODULES=/absolute/path/to/dsh/node_modules \
+OPENCODE_NATIVE_CLI=/absolute/path/to/opencode \
+python3 -m unittest discover -s scripts -p test_native_hosts.py -v
+```
+
+可只设置某一个变量来验收该宿主。`ZCODE_NATIVE_CLI` 指向随 ZCode Desktop 提供的 JS 入口，需要 Node.js；`DSH_NATIVE_MODULES` 指向官方 `@deepseek-ai/dsh` 安装的 `node_modules`，其中包含 Cordis、技能注册表与文件系统 provider；`OPENCODE_NATIVE_CLI` 指向可执行的 OpenCode。测试不下载或安装宿主软件；显式提供的路径不可用、原生返回异常或正文不匹配时测试失败。测试只使用临时用户目录与空工作目录，不携带当前环境中的宿主配置、模型密钥或项目插件；卸载后再次检查原生加载器。
 
 修改版本或用户可见行为时，同步更新 `VERSION` 和 `CHANGELOG.md`。修改 Skill 入口时，使用 Codex `skill-creator` 的 `quick_validate.py` 校验元数据与目录结构。真实引擎的可用性及图像质量需要对应 CLI 和成品检查；单元测试不替代这两项验收。
 
