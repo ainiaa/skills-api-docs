@@ -76,6 +76,12 @@ class RendererInstallerTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.home = Path(self.temporary.name)
+        versions = patch.object(RendererInstaller, "version", return_value=(0, 0, 0))
+        versions.start()
+        self.addCleanup(versions.stop)
+        graphviz = patch.object(RendererInstaller, "_ensure_graphviz")
+        graphviz.start()
+        self.addCleanup(graphviz.stop)
 
     def test_reuses_existing_engine_without_install(self):
         installer = RendererInstaller(self.home)
@@ -283,7 +289,7 @@ class RendererInstallerTests(unittest.TestCase):
         output, errors = io.StringIO(), io.StringIO()
         def find(engine):
             return "/existing/plantuml" if engine == "plantuml" else None
-        with patch("install_renderers.find_engine", side_effect=find), \
+        with patch.object(RendererInstaller, "doctor", side_effect=find), \
              patch.object(RendererInstaller, "ensure") as install, \
              patch("sys.stdout", output), patch("sys.stderr", errors):
             self.assertEqual(main(["--doctor"]), 1)

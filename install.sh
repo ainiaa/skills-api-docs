@@ -53,7 +53,9 @@ Mermaid, PlantUML, draw.io, and Archify renderers. --engine installs/checks only
 the named renderer; --no-engines installs/checks only the skill links.
 Uninstall removes this checkout's skill links, never shared renderer programs.
 --update fast-forwards the current tracked branch, then synchronizes the skills
-and pinned renderer versions. --update-deps skips the Git update.
+and renderer minimum versions, preserving equal/newer stable versions.
+--update-deps skips the Git update. --doctor checks versions and runtime dependencies
+without installing or upgrading them.
 EOF
 }
 

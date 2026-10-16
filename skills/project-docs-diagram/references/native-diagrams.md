@@ -1,6 +1,6 @@
 # Official native diagram authoring
 
-Use this path for a diagram type outside [typed IR v2](diagram-view-ir.md). Choose the view from the question, follow that engine's current [Mermaid](https://mermaid.js.org/intro/syntax-reference.html), [PlantUML](https://plantuml.com/), [draw.io](https://www.drawio.com/docs/diagram-types/), or [Archify](https://github.com/tt-a1i/archify/blob/c826e6c3a7abad19c0f3cd1ca57207d54b1ad8de/archify/schemas/README.md) syntax/schema, and write its editable native file. The official engine's actual parser and exporter determine whether the requested type and output are supported by the installed version. draw.io is an open shape language; its gallery is guidance, not an exhaustive type enum.
+Use this path for a diagram type outside [typed IR v2](diagram-view-ir.md). Choose the view from the question, follow that engine's current [Mermaid](https://mermaid.js.org/intro/syntax-reference.html), [PlantUML](https://plantuml.com/), [draw.io](https://www.drawio.com/docs/diagram-types/), or [Archify](https://github.com/tt-a1i/archify/blob/1c2b42d660e4a7571813fb43839c79e3e9ca7720/archify/schemas/README.md) syntax/schema, and write its editable native file. The official engine's actual parser and exporter determine whether the requested type and output are supported by the installed version. draw.io is an open shape language; its gallery is guidance, not an exhaustive type enum.
 
 ## Source-based work
 

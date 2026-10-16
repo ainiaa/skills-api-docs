@@ -2,7 +2,7 @@
 
 面向 Codex、Claude Code、ZCode、DeepSeek Harness（DSH）、Gemini CLI、Grok Build、pi 和 OpenCode 的项目文档 Skill 集合。`project-docs` 是统一入口，根据需求选择或组合三个专用能力：`project-docs-api` 生成接口文档，`project-docs-diagram` 生成和校验技术图，`project-docs-overview` 生成项目介绍、功能说明与开发者上手手册。所有宿主共用同一份仓库与渲染引擎安装。
 
-当前版本：[0.5.0](https://github.com/ainiaa/skills-project-docs/releases/tag/v0.5.0)。改动记录见[变更日志](CHANGELOG.md)。
+当前版本：[0.5.1](https://github.com/ainiaa/skills-project-docs/releases/tag/v0.5.1)。改动记录见[变更日志](CHANGELOG.md)。
 
 ## 快速开始
 
@@ -76,9 +76,9 @@ Project Docs API 将 API Savior IDEA 插件的 RESTful 文档风格带到 Codex 
 | [Mermaid](https://mermaid.js.org/intro/syntax-reference.html) | 流程／泳道、时序、类、状态、ER、甘特、旅程、思维导图、C4 等 | C4 上下文／容器／组件、基础 UML 时序、ERD | 编写 `.mmd`，经 Mermaid CLI 验证和导出；C4 语法在 Mermaid 官方仍标为实验性 |
 | [PlantUML](https://plantuml.com/) | UML 时序、用例、类、活动、组件、部署、状态、Timing；还有 ER、甘特、思维导图、JSON／YAML 等 | C4 上下文／容器／组件、基础 UML 时序、ERD | 编写 `.puml`，经 PlantUML CLI 验证和导出；活动图中的泳道等采用官方原生语法 |
 | [draw.io](https://www.drawio.com/docs/diagram-types/) | C4、UML 多种结构／行为图、流程／泳道、BPMN、ER、云与网络架构等；形状和模板可自由组合，没有封闭的图型全集 | 架构总览、C4 上下文／容器／组件、基础 UML 时序、BPMN **可视子集**、ERD | 编写可编辑 `.drawio`，经 draw.io Desktop CLI 验证和导出；BPMN 可视图不等于可执行 BPMN XML |
-| [Archify](https://github.com/tt-a1i/archify/blob/c826e6c3a7abad19c0f3cd1ca57207d54b1ad8de/archify/schemas/README.md) | 固定版本的五种 typed 图：architecture、workflow、sequence、dataflow、lifecycle | 暂无 IR v2 转换器；旧 IR v1 可转换为 architecture | 编写五种官方 typed JSON，经 Archify CLI 交付为交互 HTML，再按需导出 |
+| [Archify](https://github.com/tt-a1i/archify/blob/1c2b42d660e4a7571813fb43839c79e3e9ca7720/archify/schemas/README.md) | 3.1.0 官方提供十种 typed 图；本项目原生通道支持 architecture、workflow、sequence、dataflow、lifecycle 五种 | 暂无 IR v2 转换器；旧 IR v1 可转换为 architecture | 编写五种官方 typed JSON，经 Archify CLI 交付为交互 HTML，再按需导出 |
 
-按官网目录细分，Mermaid 还包括用户旅程、饼图、象限、需求、用例、Git 图、时间线、ZenUML、Sankey、XY、Block、Packet、看板、Architecture、Radar、Event Modeling、Treemap、Venn、Ishikawa、Wardley、Cynefin、TreeView 等；完整且可能变化的清单以[官方语法目录](https://mermaid.js.org/intro/syntax-reference.html)为准。PlantUML 的 UML 图还包括对象图，其非 UML 图包括 EBNF、正则、网络图、Salt 界面图、ArchiMate、SDL、Ditaa、Chronology、WBS、IE／Chen ER 和图表等，详见[官方图型目录](https://plantuml.com/)。draw.io 是自由形状编辑器，除了上表还可绘制思维导图、甘特、看板、组织图、机架图等；其[官方示例目录](https://www.drawio.com/docs/diagram-types/)是示例集合，并非受限的类型清单。Archify 固定版本只有表中五种 schema 图型。
+按官网目录细分，Mermaid 还包括用户旅程、饼图、象限、需求、用例、Git 图、时间线、ZenUML、Sankey、XY、Block、Packet、看板、Architecture、Radar、Event Modeling、Treemap、Venn、Ishikawa、Wardley、Cynefin、TreeView 等；完整且可能变化的清单以[官方语法目录](https://mermaid.js.org/intro/syntax-reference.html)为准。PlantUML 的 UML 图还包括对象图，其非 UML 图包括 EBNF、正则、网络图、Salt 界面图、ArchiMate、SDL、Ditaa、Chronology、WBS、IE／Chen ER 和图表等，详见[官方图型目录](https://plantuml.com/)。draw.io 是自由形状编辑器，除了上表还可绘制思维导图、甘特、看板、组织图、机架图等；其[官方示例目录](https://www.drawio.com/docs/diagram-types/)是示例集合，并非受限的类型清单。Archify 3.1.0 另有 erd、tree、class、timeline、waterfall；本项目原生通道尚未接入这五种新增类型。
 
 因此，“支持某种图”有两种用法：上表 IR v2 列可从本项目分型 IR 确定性转换；其他官方图型由 Skill 根据需求和证据编写原生图源，再用官方引擎验收。后者不是每种图都有独立的自动转换器。[完整差异与边界](docs/RENDERER_CAPABILITY_AUDIT.md)列出更多图型。
 
@@ -108,7 +108,7 @@ HTML 是 Archify 的交互展示文件；其余三种引擎的 HTML 不是本项
 | `bash install.sh --host all` | 为全部八个宿主安装四个 Skill；共用同一套绘图引擎 |
 | `bash install.sh --host opencode --no-engines` | 只为 OpenCode 安装四个 Skill，跳过绘图引擎 |
 | `bash install.sh --doctor` | 检查两个宿主的 Skill 链接和四个引擎；可配合 `--host`、`--engine`、`--no-engines` 缩小检查范围 |
-| `bash install.sh --update` | 快进更新当前跟踪分支，重新安装集合与三个子 Skill，并同步四个绘图 CLI 到新版集合锁定的版本 |
+| `bash install.sh --update` | 快进更新当前跟踪分支，重新安装集合与三个子 Skill，并升级低于新版集合最低版本的绘图 CLI |
 | `bash install.sh --update-deps` | 不拉取仓库，只同步当前集合声明的绘图 CLI 与 Skill 链接 |
 | `bash install.sh --update --no-engines` | 仅更新集合及三个子 Skill，保留原有引擎自动安装偏好 |
 | `bash install.sh --uninstall --host all` | 从八个宿主移除本仓库拥有的 Skill 链接，保留共享引擎 |
@@ -168,9 +168,11 @@ bash install.sh --uninstall --host pi
 
 统一升级使用 `bash install.sh --update --host <宿主>`，也可在当前宿主中说“使用 project-docs 更新本集合及依赖”，由 Skill 显式传入对应 `--host`。升级读取当前 Git 分支的跟踪上游，不自动切换分支；本地有未提交或未跟踪文件、处于 detached HEAD、未配置上游或无法快进时会停止，不自动暂存、重置或覆盖本地改动。仓库更新成功后，用新版安装器同步链接与依赖；若后续依赖步骤失败，会明确返回失败，并输出可直接执行的 `--update-deps` 重试命令，保留原 `--host`、引擎选择和带空格的仓库路径。
 
-三个子 Skill 随同一仓库更新。四个绘图 CLI 按本集合锁定并验收的版本同步，保留下载校验；新版准备成功后才切换受管入口，旧版本目录保留。macOS 的 draw.io 更新安装在共享管理目录，Linux 使用现有 apt 安装流程，可能需要系统权限。`*_OFFICIAL_CLI` 显式指定的工具保留原路径并提示由外部管理；管理目录中的自定义入口也不会被强行覆盖。PDLC、understand-anything 和 CodeGraph 属于按需使用的外部能力，不作为本集合必装依赖，也不扫描升级用户的其他全局 Skill 或软件。
+三个子 Skill 随同一仓库更新。四个绘图 CLI 以本集合锁定并验收的版本为最低基线，保留下载校验；更新时保留相同或更高的稳定版本，无法识别版本则报错停止，避免覆盖或降级已有工具。新版准备成功后才切换受管入口，旧版本目录保留。macOS 的 draw.io 更新安装在共享管理目录，Linux 使用现有 apt 安装流程，可能需要系统权限。`*_OFFICIAL_CLI` 显式指定的工具保留原路径并提示由外部管理；管理目录中的自定义入口也不会被强行覆盖。PDLC、understand-anything 和 CodeGraph 属于按需使用的外部能力，不作为本集合必装依赖，也不扫描升级用户的其他全局 Skill 或软件。
 
 `--update`、`--update-deps` 均支持 `--engine mermaid` 等选项限定 CLI 范围；这两个命令中的 `--no-engines` 只跳过本次引擎同步，不改变原有自动安装偏好。普通生成任务不会在运行前自动联网升级。
+
+`bash install.sh --doctor` 仅读取状态并使用临时文件检查：报告引擎实际版本及最低版本，核对 Node.js、Java、Graphviz（含 PlantUML `-testdot`）、Chrome/Chromium 和无桌面 Linux 的 Xvfb；Mermaid 还会实际生成临时 SVG 验证浏览器可用。缺失、版本过旧或检查失败均返回非零状态，doctor 不安装或升级依赖。Archify 从实际 CLI 对应的 `package.json` 读取版本，安装使用官方发行 ZIP 并校验 SHA-256。
 
 ### 渲染引擎要另外安装吗？
 
@@ -179,11 +181,11 @@ bash install.sh --uninstall --host pi
 | 选择的引擎 | 本机需要的程序 | 安装与运行条件 |
 |---|---|---|
 | Mermaid | `mmdc` | 自动准备 Node.js 22.13+，并安装 [Mermaid CLI](https://github.com/mermaid-js/mermaid-cli#installation) 12.0.0 |
-| PlantUML | `plantuml` | 自动准备 Java 并下载校验 [PlantUML](https://plantuml.com/download) 1.2026.8 |
-| draw.io | `drawio` | macOS 自动下载并校验 [draw.io Desktop](https://github.com/jgraph/drawio-desktop/releases) 29.3.6 通用版 DMG，安装在用户目录；x86-64 的 apt 系 Linux 使用校验过的 29.3.6 安装包，并准备无桌面环境导出所需的 Xvfb |
-| Archify | `archify` | 自动准备 Node.js、Chrome/Chromium，并安装校验 [Archify](https://github.com/tt-a1i/archify/releases/tag/v2.16.0) 2.16.0 |
+| PlantUML | `plantuml` | 自动准备 Java 11+ 和 Graphviz `dot`，并下载校验 [PlantUML](https://plantuml.com/download) 1.2026.8 |
+| draw.io | `drawio` | macOS 自动下载并校验 [draw.io Desktop](https://github.com/jgraph/drawio-desktop/releases) 32.4.1 通用版 DMG，安装在用户目录；x86-64 的 apt 系 Linux 使用校验过的 32.4.1 安装包，并准备无桌面环境导出所需的 Xvfb |
+| Archify | `archify` | 自动准备 Node.js 18+、Chrome/Chromium，并安装校验 [Archify](https://github.com/tt-a1i/archify/releases/tag/v3.1.0) 3.1.0 |
 
-安装与内部 CLI 要求 **Python 3.11 或更新版本**；解析 Java 源码还需要 JDK 11 或更新版本。macOS 自动安装 Chrome／Java 需要 Homebrew；Linux 的系统包安装需要 apt 与相应权限。系统缺少这些条件、下载校验失败或格式不可用时会明确报错，不会悄悄换用其他引擎或格式。手动指定 CLI 路径的开发者可查看[Skill 入口说明](#文档)。
+安装与内部 CLI 要求 **Python 3.11 或更新版本**；解析 Java 源码还需要 JDK 11 或更新版本。macOS 自动安装 Chrome／Java／Graphviz 需要 Homebrew；Linux 的系统包安装需要 apt 与相应权限。系统缺少这些条件、下载校验失败或格式不可用时会明确报错，不会悄悄换用其他引擎或格式。手动指定 CLI 路径的开发者可查看[Skill 入口说明](#文档)。
 
 ## 使用 Project Docs API
 

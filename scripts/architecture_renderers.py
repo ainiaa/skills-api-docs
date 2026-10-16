@@ -101,6 +101,6 @@ def render_archify(ir):
         connections.append({"from": "domain_" + external["domain"], "to": f"external_{index}", "label": external.get("kind", "external")})
     for relation in ir["relations"]:
         connections.append({"from": "domain_" + relation["from"], "to": "domain_" + relation["to"], "label": relation["label"]})
-    return {"schema_version": 1, "diagram_type": "architecture", "meta": {"title": ir["summary"]},
+    return {"schema_version": 1, "diagram_type": "architecture", "meta": {"title": ir["summary"], "output": "architecture.archify.html"},
             "layout": {"mode": "grid", "cols": cols, "cellW": 280, "cellH": 110, "gapX": 70, "gapY": 90},
             "components": components, "connections": connections}

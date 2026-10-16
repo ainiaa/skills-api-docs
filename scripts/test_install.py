@@ -1,4 +1,6 @@
 import os
+import json
+import sys
 import shutil
 import subprocess
 import tempfile
@@ -358,10 +360,19 @@ class InstallTests(unittest.TestCase):
     def test_default_installs_both_hosts_with_existing_engines(self):
         fake_bin = self.root / "fake-bin"
         fake_bin.mkdir()
-        for name in ("mmdc", "plantuml", "drawio", "archify"):
+        versions = {"mmdc": "12.0.0", "plantuml": "PlantUML version 1.2026.8", "drawio": "32.4.1",
+                    "archify": "", "dot": "dot - graphviz version 14.0.0", "java": 'openjdk version "21.0.10"'}
+        for name, version in versions.items():
             binary = fake_bin / name
-            binary.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            binary.write_text(f"#!{sys.executable}\nimport sys\nfrom pathlib import Path\n"
+                              f"print({version!r})\n"
+                              "if '-o' in sys.argv: Path(sys.argv[sys.argv.index('-o')+1]).write_text('<svg/>')\n")
             binary.chmod(0o755)
+        (self.root / "package.json").write_text(json.dumps({"name": "archify", "version": "3.1.0"}))
+        (fake_bin / "visual-check.mjs").write_text("export function findChrome(){return '/fake/chrome'}")
+        for engine, binary in (("MERMAID", "mmdc"), ("PLANTUML", "plantuml"), ("DRAWIO", "drawio"), ("ARCHIFY", "archify")):
+            self.environment[f"{engine}_OFFICIAL_CLI"] = str(fake_bin / binary)
+        self.environment["GRAPHVIZ_DOT"] = str(fake_bin / "dot")
         self.environment["PATH"] = str(fake_bin) + os.pathsep + self.environment["PATH"]
 
         result = self.run_installer(isolated=False)

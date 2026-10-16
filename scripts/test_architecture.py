@@ -264,6 +264,9 @@ class ArchitectureTests(unittest.TestCase):
         self.ir["externalSystems"][0]["domain"] = "missing"
         self.assertTrue(any("missing" in value for value in validate_architecture(self.ir, self.root)))
 
+    def test_archify_spec_has_portable_authored_output_for_v3_delivery(self):
+        self.assertEqual(render_archify(self.ir)["meta"]["output"], "architecture.archify.html")
+
     def test_multiple_external_components_have_distinct_archify_positions(self):
         external = {"name": "EBS", "kind": "Feign", "domain": "orders"}
         self.ir["externalSystems"] = [external, dict(external, name="CRM")]

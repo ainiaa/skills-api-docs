@@ -409,6 +409,16 @@ class NativeDiagramTest(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)["officialCheck"], "pass")
         self.assertTrue((self.output / "diagram.puml").is_file())
 
+    @unittest.skipUnless(os.environ.get("PLANTUML_OFFICIAL_CLI") or shutil.which("plantuml"),
+                         "official PlantUML CLI unavailable")
+    def test_official_plantuml_class_diagram_exports_with_graphviz(self):
+        source = self.root / "classes.puml"
+        source.write_text("@startuml\nclass Order\nclass Item\nOrder --> Item\n@enduml\n")
+        executable = os.environ.get("PLANTUML_OFFICIAL_CLI") or shutil.which("plantuml")
+        result = self.render("plantuml", source, "--engine-cli", executable, "--export", "svg")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("<svg", (self.output / "diagram.plantuml.svg").read_text())
+
     @unittest.skipUnless(os.environ.get("DRAWIO_OFFICIAL_CLI") or shutil.which("drawio"),
                          "official draw.io CLI unavailable")
     def test_official_drawio_freeform_diagram_native_export(self):

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Install missing renderers or explicitly synchronize the collection's pinned CLI versions."""
+"""Install missing renderers or upgrade renderers to the collection's minimum CLI versions."""
 
 import argparse
 import hashlib
+import json
 import os
 import platform
 import re
@@ -12,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.request
+import zipfile
 from pathlib import Path
 
 from engine_paths import ENGINE_BINARIES, find_engine, prepare_runtime, renderer_home
@@ -21,12 +23,15 @@ from python_runtime import require_python
 MERMAID_VERSION = "12.0.0"
 PLANTUML_VERSION = "1.2026.8"
 PLANTUML_SHA256 = "5e1ecfa8ecd32c90b03bbf3b1eb6f020943f98ab0fcf4032be31a0002ee2c462"
-DRAWIO_VERSION = "29.3.6"
-DRAWIO_DEB_SHA256 = "ff13b6604806faa3f1cfe169ef940a1358914c83905edf2cda9afb939a0fb3f4"
-DRAWIO_DMG_SHA256 = "38b4653d312bbb0f038c84bed8c74bb989697f1bc24d57d182ed1e463e17bdde"
-ARCHIFY_VERSION = "2.16.0"
-ARCHIFY_COMMIT = "c826e6c3a7abad19c0f3cd1ca57207d54b1ad8de"
+DRAWIO_VERSION = "32.4.1"
+DRAWIO_DEB_SHA256 = "f4455b3bba3d3b539c3cd069218fc64f0462b1b01610fe8d11acc3ca8566f32b"
+DRAWIO_DMG_SHA256 = "1e18db784d138cf0383ba66f662f5ace87e5b9415058075b50ce1b9560f68172"
+ARCHIFY_VERSION = "3.1.0"
+ARCHIFY_COMMIT = "1c2b42d660e4a7571813fb43839c79e3e9ca7720"
+ARCHIFY_SHA256 = "ffedc53390c9da6e859f41e432c5d2d0615a23cf00a503181f07efbba88a7ce8"
 NODE_VERSION = "22.13.1"
+RENDERER_VERSIONS = {"mermaid": MERMAID_VERSION, "plantuml": PLANTUML_VERSION,
+                     "drawio": DRAWIO_VERSION, "archify": ARCHIFY_VERSION}
 
 
 class RendererInstaller:
@@ -36,12 +41,95 @@ class RendererInstaller:
         self.updating = False
 
     @staticmethod
-    def _run(command, env=None):
-        result = subprocess.run(command, capture_output=True, text=True, env=env, check=False)
+    def _run(command, env=None, timeout=None):
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, env=env,
+                                    check=False, timeout=timeout)
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError(f"{command[0]} timed out after {timeout}s") from error
         if result.returncode:
             detail = result.stderr.strip() or result.stdout.strip()
             raise RuntimeError(f"{' '.join(map(str, command))} failed: {detail}")
         return result.stdout.strip() or result.stderr.strip()
+
+    @staticmethod
+    def version(engine, executable):
+        """Read native versions, without inferring a version from a directory name."""
+        if engine == "archify":
+            metadata = Path(executable).resolve().parent.parent / "package.json"
+            try:
+                package = json.loads(metadata.read_text(encoding="utf-8"))
+                text = package["version"] if package["name"] == "archify" else ""
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                raise RuntimeError(f"cannot determine archify version from {metadata}") from error
+        else:
+            command = [str(executable), "-version" if engine == "plantuml" else "--version"]
+            try:
+                result = subprocess.run(command, capture_output=True, text=True, timeout=20)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                raise RuntimeError(f"{engine} version probe failed or timed out: {error}") from error
+            text = result.stdout + "\n" + result.stderr
+            # PlantUML still prints its version when Graphviz is missing; doctor checks dot separately.
+            missing_dot = engine == "plantuml" and "Dot executable does not exist" in text
+            if result.returncode and not missing_dot:
+                raise RuntimeError(f"{engine} version probe failed (exit {result.returncode})")
+            if engine == "plantuml":
+                match = re.search(r"(?m)^PlantUML version\s+(\S+)", text)
+            else:
+                match = re.search(r"(?m)^\s*v?(\d+\.\d+\.\d+[^\s]*)\s*$", text)
+            text = match[1] if match else ""
+        if not isinstance(text, str) or not re.fullmatch(r"\d+\.\d+\.\d+(?:\+[\w.-]+)?", text):
+            raise RuntimeError(f"unknown or prerelease {engine} version: {text!r}")
+        return tuple(map(int, text.split("+", 1)[0].split(".")))
+
+    def doctor(self, engine):
+        prepare_runtime()
+        executable = find_engine(engine)
+        if not executable:
+            raise RuntimeError(f"{engine} is not installed; run bash install.sh --engine {engine}")
+        actual = self.version(engine, executable)
+        minimum = tuple(map(int, RENDERER_VERSIONS[engine].split(".")))
+        if actual < minimum:
+            raise RuntimeError(f"{engine} version {'.'.join(map(str, actual))} is older than required {RENDERER_VERSIONS[engine]}")
+        if engine in {"mermaid", "archify"}:
+            node = shutil.which("node")
+            if not node:
+                raise RuntimeError("Node.js is missing")
+            match = re.search(r"v?(\d+)\.(\d+)", self._run([node, "--version"], timeout=20))
+            required = (22, 13) if engine == "mermaid" else (18, 0)
+            if not match or tuple(map(int, match.groups())) < required:
+                raise RuntimeError(f"Node.js {required[0]}.{required[1]}+ is required for {engine}")
+        if engine == "plantuml":
+            java = shutil.which("java")
+            if not java:
+                raise RuntimeError("Java 11+ is required for PlantUML")
+            match = re.search(r'version\s+"?(\d+)(?:\.(\d+))?', self._run([java, "-version"], timeout=20))
+            major = (int(match[2]) if match[1] == "1" and match[2] else int(match[1])) if match else 0
+            if major < 11:
+                raise RuntimeError("Java 11+ is required for PlantUML")
+            dot = shutil.which(os.environ.get("GRAPHVIZ_DOT") or "dot")
+            if not dot:
+                raise RuntimeError("Graphviz dot is missing (check GRAPHVIZ_DOT or install graphviz)")
+            self._run([dot, "-V"], timeout=20)
+            self._run([executable, "-testdot"], timeout=20)
+        elif engine == "archify":
+            self._run([executable, "doctor"], timeout=30)
+            visual = Path(executable).resolve().with_name("visual-check.mjs")
+            code = (f"import {{findChrome}} from {json.dumps(visual.as_uri())};"
+                    "const chrome=findChrome(); if(!chrome){console.error('Chrome/Chromium is missing');process.exit(1)};console.log(chrome)")
+            self._run([node, "--input-type=module", "-e", code], timeout=20)
+        elif engine == "mermaid":
+            # A real temporary render also checks the browser selected by Puppeteer or a CLI wrapper.
+            with tempfile.TemporaryDirectory(prefix="mermaid-doctor-") as temporary:
+                source, target = Path(temporary) / "check.mmd", Path(temporary) / "check.svg"
+                source.write_text("flowchart LR\n A --> B\n", encoding="utf-8")
+                self._run([executable, "-i", str(source), "-o", str(target)], timeout=30)
+                if not target.is_file() or "<svg" not in target.read_text(encoding="utf-8"):
+                    raise RuntimeError("Mermaid browser check did not produce SVG")
+        elif engine == "drawio" and platform.system() == "Linux" and not os.environ.get("DISPLAY"):
+            if not shutil.which("xvfb-run"):
+                raise RuntimeError("xvfb-run is required for headless draw.io")
+        return f"{executable} (version {'.'.join(map(str, actual))}; required >= {RENDERER_VERSIONS[engine]}; dependencies OK)"
 
     @staticmethod
     def _download(url, destination):
@@ -187,6 +275,25 @@ class RendererInstaller:
         self._run([*prefix, apt, "update"])
         self._run([*prefix, apt, "install", "-y", package])
 
+    def _ensure_graphviz(self):
+        configured = os.environ.get("GRAPHVIZ_DOT")
+        dot = shutil.which(configured or "dot")
+        if not dot and configured:
+            raise RuntimeError(f"configured GRAPHVIZ_DOT is unavailable: {configured}")
+        if not dot:
+            if platform.system() == "Darwin":
+                brew = shutil.which("brew")
+                if not brew:
+                    raise RuntimeError("Graphviz dot is missing and Homebrew is unavailable")
+                self._run([brew, "install", "graphviz"])
+            elif platform.system() == "Linux":
+                self._apt_install("graphviz")
+            dot = shutil.which("dot")
+        if not dot:
+            raise RuntimeError("Graphviz dot is required for PlantUML; automatic setup failed")
+        self._run([dot, "-V"], timeout=20)
+        return Path(dot)
+
     def _ensure_chrome(self):
         for name in ("google-chrome", "chromium", "chromium-browser"):
             if shutil.which(name):
@@ -226,6 +333,7 @@ class RendererInstaller:
 
     def _install_plantuml(self):
         java = self._ensure_java()
+        self._ensure_graphviz()
         destination = self.home / "plantuml" / PLANTUML_VERSION
         jar = destination / "plantuml.jar"
         if not jar.is_file():
@@ -312,17 +420,20 @@ class RendererInstaller:
         destination = self.home / "archify" / ARCHIFY_VERSION
         cli = destination / "archify" / "bin" / "archify.mjs"
         if not cli.is_file():
-            git = shutil.which("git")
-            if not git:
-                raise RuntimeError("Git is required for the pinned Archify installation")
             self.home.mkdir(parents=True, exist_ok=True)
             with tempfile.TemporaryDirectory(dir=self.home) as temporary:
-                staged = Path(temporary) / "archify"
-                self._run([git, "clone", "--quiet", "--depth", "1", "--branch",
-                           f"v{ARCHIFY_VERSION}", "https://github.com/tt-a1i/archify.git", str(staged)])
-                commit = self._run([git, "-C", str(staged), "rev-parse", "HEAD"])
-                if commit != ARCHIFY_COMMIT or not (staged / "archify/bin/archify.mjs").is_file():
-                    raise RuntimeError("Archify checkout does not match the pinned official commit")
+                temporary = Path(temporary)
+                archive = temporary / "archify.zip"
+                self._download(f"https://github.com/tt-a1i/archify/releases/download/v{ARCHIFY_VERSION}/archify.zip", archive)
+                if self._digest(archive) != ARCHIFY_SHA256:
+                    raise RuntimeError("Archify archive checksum does not match the pinned release")
+                staged = temporary / "unpacked"
+                with zipfile.ZipFile(archive) as package:
+                    package.extractall(staged)
+                entry = staged / "archify/bin/archify.mjs"
+                if not entry.is_file():
+                    raise RuntimeError("Archify release archive is missing its CLI")
+                entry.chmod(entry.stat().st_mode | 0o111)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(staged), str(destination))
         self._ensure_chrome()
@@ -333,16 +444,19 @@ class RendererInstaller:
             raise ValueError(f"unknown renderer: {engine}")
         self.updating = update
         configured = os.environ.get(f"{engine.upper()}_OFFICIAL_CLI")
-        existing = find_engine(engine) if not update or configured else None
-        if existing:
-            if engine == "archify":
-                self._ensure_chrome()
-            return str(existing)
-        if update and configured:
-            raise RuntimeError(f"configured {engine} CLI is unavailable: {configured}")
         target = self.bin / ENGINE_BINARIES[engine]
         if update and (target.exists() or target.is_symlink()) and not self._owned_target(ENGINE_BINARIES[engine], target):
             raise RuntimeError(f"refusing to replace existing renderer path: {target}")
+        existing = find_engine(engine)
+        if update and configured and not existing:
+            raise RuntimeError(f"configured {engine} CLI is unavailable: {configured}")
+        if existing and (not update or configured or
+                         self.version(engine, existing) >= tuple(map(int, RENDERER_VERSIONS[engine].split(".")))):
+            if engine == "archify":
+                self._ensure_chrome()
+            elif engine == "plantuml":
+                self._ensure_graphviz()
+            return str(existing)
         installed = getattr(self, f"_install_{engine}")()
         return str(installed)
 
@@ -351,9 +465,9 @@ def main(argv=None):
     require_python()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--engine", action="append", choices=tuple(ENGINE_BINARIES))
-    parser.add_argument("--doctor", action="store_true", help="check selected renderer commands without installing")
+    parser.add_argument("--doctor", action="store_true", help="check selected versions and runtime dependencies without installing")
     parser.add_argument("--auto", action="store_true", help="respect an explicit --no-engines preference")
-    parser.add_argument("--update", action="store_true", help="synchronize pinned versions; retain explicit CLI overrides")
+    parser.add_argument("--update", action="store_true", help="upgrade to minimum versions without downgrading; retain explicit CLI overrides")
     args = parser.parse_args(argv)
     if args.update and (args.doctor or args.auto):
         parser.error("--update cannot be combined with --doctor or --auto")
@@ -366,7 +480,7 @@ def main(argv=None):
     status = 0
     for engine in selected:
         try:
-            path = find_engine(engine) if args.doctor else installer.ensure(engine, update=args.update)
+            path = installer.doctor(engine) if args.doctor else installer.ensure(engine, update=args.update)
             if not path:
                 raise RuntimeError(f"{engine} is not installed; run bash install.sh --engine {engine}")
             retained = args.update and os.environ.get(f"{engine.upper()}_OFFICIAL_CLI")

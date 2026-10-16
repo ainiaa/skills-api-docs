@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-16
+
+- 绘图依赖基线升级至 draw.io Desktop 32.4.1、Archify 3.1.0；Archify 改用官方发行 ZIP 并校验 SHA-256。更新时核对实际版本，保留相同或更高稳定版本，无法识别版本时停止，避免降级。
+- 补齐 Archify 3.1.0 必需的 `meta.output` 相对路径字段，保持架构交付和多格式导出兼容。
+- PlantUML 安装及复用时补齐 Graphviz；doctor 检查引擎实际版本、Node.js／Java、Graphviz、浏览器及无桌面 Linux 的 Xvfb，Mermaid 通过临时 SVG 验证浏览器。诊断汇总失败、不安装依赖；补充依赖缺失、版本边界、升级保护及发行包校验回归测试。
+
 ## [0.5.0] - 2026-10-15
 
 - 仓库更名为 `skills-project-docs`，与统一入口、接口文档、技术图和项目说明的集合范围一致；同步克隆地址、问题反馈与版本比较链接。已有检出更新远程地址即可继续使用。
@@ -67,7 +73,8 @@
 - 修复 macOS 符号链接环境下 tree-sitter 回退路径未 resolve 导致 narrowed scan 静默失效的问题；`--no-codegraph` 的优先级高于测试钩子环境变量。
 - 文档同步：SKILL.md 与 README 增补发现引擎章节、降级规则与可选依赖安装方式。
 
-[Unreleased]: https://github.com/ainiaa/skills-project-docs/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/ainiaa/skills-project-docs/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/ainiaa/skills-project-docs/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/ainiaa/skills-project-docs/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/ainiaa/skills-project-docs/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/ainiaa/skills-project-docs/compare/v0.3.0...v0.4.0
