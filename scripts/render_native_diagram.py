@@ -21,17 +21,24 @@ EXTENSIONS = {"mermaid": ".mmd", "plantuml": ".puml", "drawio": ".drawio",
               "archify": ".archify.json"}
 BINARIES = {"mermaid": "mmdc", "plantuml": "plantuml", "drawio": "drawio",
             "archify": "archify"}
-ARCHIFY_TYPES = {"architecture", "workflow", "sequence", "dataflow", "lifecycle"}
 PROVENANCE = {"EXTRACTED", "INFERRED", "AMBIGUOUS"}
 INCLUDE = re.compile(r"^!(include(?:_once|_many|url)?|includesub)\s+(.+)$")
 START_UML = re.compile(r"^@startuml(?:\(id=([^)]*)\))?")
 ARCHIFY_MATERIAL = {
     "architecture": ("components", "boundaries", "connections"),
-    "workflow": ("lanes", "phases", "groups", "nodes", "edges"),
+    "workflow": ("lanes", "phases", "groups", "nodes", "edges", "mainPath"),
     "sequence": ("participants", "segments", "messages", "activations"),
     "dataflow": ("stages", "nodes", "flows"),
-    "lifecycle": ("lanes", "states", "transitions"),
+    "lifecycle": ("lanes", "states", "transitions", "mainPath"),
+    "erd": ("entities", "relationships"),
+    "tree": ("nodes",),
+    "class": ("types", "relationships"),
+    "timeline": ("lanes", "events"),
+    "waterfall": ("spans",),
 }
+ARCHIFY_TYPES = set(ARCHIFY_MATERIAL)
+ARCHIFY_REQUIRED_MATERIAL = {"erd": "entities", "tree": "nodes", "class": "types",
+                             "timeline": "events", "waterfall": "spans"}
 
 
 def _result(ok, engine, artifacts=(), **extra):
@@ -193,9 +200,24 @@ def _material_refs(source, engine, diagram_type):
     payload = json.loads(source.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("Archify diagram must be a JSON object")
-    return {f"/{key}/{index}": json.dumps(item, ensure_ascii=False)
-            for key in ARCHIFY_MATERIAL.get(diagram_type, ())
-            for index, item in enumerate(payload.get(key, []))}
+    required = ARCHIFY_REQUIRED_MATERIAL.get(diagram_type)
+    if required and not payload.get(required):
+        raise ValueError(f"Archify {required} must be a non-empty array")
+    collections = [(f"/{key}", payload.get(key, []))
+                   for key in (*ARCHIFY_MATERIAL.get(diagram_type, ()), "cards")]
+    if diagram_type == "workflow" and "semanticChecks" in payload:
+        checks = payload["semanticChecks"]
+        if not isinstance(checks, dict):
+            raise ValueError("Archify semanticChecks must be an object")
+        collections.extend(("/semanticChecks/" + key.replace("~", "~0").replace("/", "~1"), items)
+                           for key, items in checks.items())
+    refs = {}
+    for pointer, items in collections:
+        if not isinstance(items, list):
+            raise ValueError(f"Archify {pointer} must be an array")
+        for index, item in enumerate(items):
+            refs[f"{pointer}/{index}"] = json.dumps(item, ensure_ascii=False)
+    return refs
 
 
 def _validate_source_manifest(path, root, source, engine, actual_type):
@@ -208,8 +230,9 @@ def _validate_source_manifest(path, root, source, engine, actual_type):
         return None, ["evidence manifest must be an object"]
     problems = []
     version = manifest.get("version")
-    if version not in {1, 2}:
+    if type(version) is not int or version not in (1, 2):
         problems.append("evidence manifest version must be 1 or 2")
+        version = None
     if manifest.get("engine") != engine:
         problems.append(f"evidence manifest engine must be {engine}")
     diagram_type = manifest.get("diagramType")
@@ -236,18 +259,18 @@ def _validate_source_manifest(path, root, source, engine, actual_type):
         statement = claim.get("statement")
         if not isinstance(statement, str) or not statement.strip():
             problems.append(f"{label}: statement must be non-empty")
+        ref = claim.get("artifactRef")
+        valid_ref = isinstance(ref, str) and ref in material
         artifact_quote = claim.get("artifactQuote")
         if (not isinstance(artifact_quote, str) or not artifact_quote.strip() or
                 (artifact_quote not in diagram_text and
-                 not (version == 2 and claim.get("artifactRef") in material and
-                      artifact_quote in material[claim["artifactRef"]]))):
+                 not (version == 2 and valid_ref and artifact_quote in material[ref]))):
             problems.append(f"{label}: artifactQuote must occur verbatim in native source")
-        if claim.get("provenance") not in PROVENANCE:
+        if not isinstance(claim.get("provenance"), str) or claim["provenance"] not in PROVENANCE:
             problems.append(f"{label}: provenance must be EXTRACTED, INFERRED, or AMBIGUOUS")
         cited_lines = _check_evidence(claim.get("evidence"), root, label, problems)
         if version == 2:
-            ref = claim.get("artifactRef")
-            if ref not in material:
+            if not valid_ref:
                 problems.append(f"{label}: artifactRef is not a material diagram item: {ref}")
             else:
                 covered.add(ref)
@@ -305,7 +328,7 @@ def main(argv=None):
         except (OSError, ValueError) as error:
             parser.error(f"Archify JSON is unreadable: {error}")
         diagram_type = payload.get("diagram_type") if isinstance(payload, dict) else None
-        if diagram_type not in ARCHIFY_TYPES:
+        if not isinstance(diagram_type, str) or diagram_type not in ARCHIFY_TYPES:
             parser.error(f"unsupported Archify diagram_type: {diagram_type}")
         if args.repo_root and diagram_type != "architecture":
             parser.error("--repo-root applies only to Archify architecture")
@@ -377,12 +400,15 @@ def main(argv=None):
             process = subprocess.run(command, text=True, capture_output=True, timeout=180)
             receipt = json.loads(process.stdout)
         except (OSError, subprocess.TimeoutExpired, ValueError) as error:
+            html.unlink(missing_ok=True)
             return report(False, evidence_artifacts, diagramType=diagram_type, officialCheck="fail",
                            problems=[str(error)])
         if (process.returncode or not html.is_file() or not isinstance(receipt, dict) or
                 receipt.get("ok") is not True or receipt.get("command") != "deliver"):
+            html.unlink(missing_ok=True)
+            error = receipt.get("error") if isinstance(receipt, dict) else None
             return report(False, evidence_artifacts, diagramType=diagram_type, officialCheck="fail",
-                           problems=[process.stderr.strip() or str(receipt.get("error") if isinstance(receipt, dict) else "Archify delivery failed")])
+                           problems=[process.stderr.strip() or str(error or f"Archify delivery failed (exit {process.returncode})")])
         artifacts = [native, html, *evidence_artifacts]
         if formats:
             exported, error = _archify_export(executable, html, output, formats)

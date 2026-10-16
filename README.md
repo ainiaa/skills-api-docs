@@ -2,7 +2,7 @@
 
 面向 Codex、Claude Code、ZCode、DeepSeek Harness（DSH）、Gemini CLI、Grok Build、pi 和 OpenCode 的项目文档 Skill 集合。`project-docs` 是统一入口，根据需求选择或组合三个专用能力：`project-docs-api` 生成接口文档，`project-docs-diagram` 生成和校验技术图，`project-docs-overview` 生成项目介绍、功能说明与开发者上手手册。所有宿主共用同一份仓库与渲染引擎安装。
 
-当前版本：[0.5.1](https://github.com/ainiaa/skills-project-docs/releases/tag/v0.5.1)。改动记录见[变更日志](CHANGELOG.md)。
+当前版本：[0.6.0](https://github.com/ainiaa/skills-project-docs/releases/tag/v0.6.0)。改动记录见[变更日志](CHANGELOG.md)。
 
 ## 快速开始
 
@@ -76,9 +76,9 @@ Project Docs API 将 API Savior IDEA 插件的 RESTful 文档风格带到 Codex 
 | [Mermaid](https://mermaid.js.org/intro/syntax-reference.html) | 流程／泳道、时序、类、状态、ER、甘特、旅程、思维导图、C4 等 | C4 上下文／容器／组件、基础 UML 时序、ERD | 编写 `.mmd`，经 Mermaid CLI 验证和导出；C4 语法在 Mermaid 官方仍标为实验性 |
 | [PlantUML](https://plantuml.com/) | UML 时序、用例、类、活动、组件、部署、状态、Timing；还有 ER、甘特、思维导图、JSON／YAML 等 | C4 上下文／容器／组件、基础 UML 时序、ERD | 编写 `.puml`，经 PlantUML CLI 验证和导出；活动图中的泳道等采用官方原生语法 |
 | [draw.io](https://www.drawio.com/docs/diagram-types/) | C4、UML 多种结构／行为图、流程／泳道、BPMN、ER、云与网络架构等；形状和模板可自由组合，没有封闭的图型全集 | 架构总览、C4 上下文／容器／组件、基础 UML 时序、BPMN **可视子集**、ERD | 编写可编辑 `.drawio`，经 draw.io Desktop CLI 验证和导出；BPMN 可视图不等于可执行 BPMN XML |
-| [Archify](https://github.com/tt-a1i/archify/blob/1c2b42d660e4a7571813fb43839c79e3e9ca7720/archify/schemas/README.md) | 3.1.0 官方提供十种 typed 图；本项目原生通道支持 architecture、workflow、sequence、dataflow、lifecycle 五种 | 暂无 IR v2 转换器；旧 IR v1 可转换为 architecture | 编写五种官方 typed JSON，经 Archify CLI 交付为交互 HTML，再按需导出 |
+| [Archify](https://github.com/tt-a1i/archify/blob/1c2b42d660e4a7571813fb43839c79e3e9ca7720/archify/schemas/README.md) | 3.1.0 的十种 typed 图：architecture、workflow、sequence、dataflow、lifecycle、erd、tree、class、timeline、waterfall | 暂无 IR v2 转换器；旧 IR v1 可转换为 architecture | 编写十种官方 typed JSON，经 Archify CLI 交付为交互 HTML，再按需导出 |
 
-按官网目录细分，Mermaid 还包括用户旅程、饼图、象限、需求、用例、Git 图、时间线、ZenUML、Sankey、XY、Block、Packet、看板、Architecture、Radar、Event Modeling、Treemap、Venn、Ishikawa、Wardley、Cynefin、TreeView 等；完整且可能变化的清单以[官方语法目录](https://mermaid.js.org/intro/syntax-reference.html)为准。PlantUML 的 UML 图还包括对象图，其非 UML 图包括 EBNF、正则、网络图、Salt 界面图、ArchiMate、SDL、Ditaa、Chronology、WBS、IE／Chen ER 和图表等，详见[官方图型目录](https://plantuml.com/)。draw.io 是自由形状编辑器，除了上表还可绘制思维导图、甘特、看板、组织图、机架图等；其[官方示例目录](https://www.drawio.com/docs/diagram-types/)是示例集合，并非受限的类型清单。Archify 3.1.0 另有 erd、tree、class、timeline、waterfall；本项目原生通道尚未接入这五种新增类型。
+按官网目录细分，Mermaid 还包括用户旅程、饼图、象限、需求、用例、Git 图、时间线、ZenUML、Sankey、XY、Block、Packet、看板、Architecture、Radar、Event Modeling、Treemap、Venn、Ishikawa、Wardley、Cynefin、TreeView 等；完整且可能变化的清单以[官方语法目录](https://mermaid.js.org/intro/syntax-reference.html)为准。PlantUML 的 UML 图还包括对象图，其非 UML 图包括 EBNF、正则、网络图、Salt 界面图、ArchiMate、SDL、Ditaa、Chronology、WBS、IE／Chen ER 和图表等，详见[官方图型目录](https://plantuml.com/)。draw.io 是自由形状编辑器，除了上表还可绘制思维导图、甘特、看板、组织图、机架图等；其[官方示例目录](https://www.drawio.com/docs/diagram-types/)是示例集合，并非受限的类型清单。Archify 3.1.0 的十种 typed 图均已接入原生通道，包括 ERD、树、类图、时间线与耗时瀑布图；IR v2 转换器仍仅覆盖已有 profile。
 
 因此，“支持某种图”有两种用法：上表 IR v2 列可从本项目分型 IR 确定性转换；其他官方图型由 Skill 根据需求和证据编写原生图源，再用官方引擎验收。后者不是每种图都有独立的自动转换器。[完整差异与边界](docs/RENDERER_CAPABILITY_AUDIT.md)列出更多图型。
 
@@ -227,6 +227,8 @@ Skill 会定位源码并运行生成器；完整交付物包括 Markdown、Postm
 使用 $project-docs-diagram 根据订单调用链画 PlantUML 时序图，保留 .puml，导出 PDF。
 使用 $project-docs-diagram 根据状态转换画 Mermaid 状态图，保留 .mmd，导出 SVG。
 使用 $project-docs-diagram 根据审批流程画 Archify workflow，保留 JSON 和交互 HTML，导出 WebP。
+使用 $project-docs-diagram 根据代码画 Archify class 和 tree，根据数据库定义画 Archify erd。
+使用 $project-docs-diagram 根据事件日志画 Archify timeline，根据 Trace 耗时画 Archify waterfall，保留时间与单位来源。
 ```
 
 未指定引擎时，Skill 先按问题选图型，再选能表达该图型的引擎；项目／模块架构总览默认用 draw.io。明确指定引擎或导出格式时按要求执行；不支持的组合会报告错误。以上 Mermaid 状态图和 Archify workflow 走**官方原生图源通道**，不是 IR v2 转换。

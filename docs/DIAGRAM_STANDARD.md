@@ -18,9 +18,9 @@
 
 “BPMN 可视子集”表示使用事件、任务、网关、Pool、Lane、顺序流和消息流图形，并校验已实现的约束。`.drawio` 不是可执行 BPMN XML，本项目不声称通过 BPMN XML 一致性验证。C4 是建模约定，不是 OMG 标准。Mermaid C4 即使成功渲染，也仍有官方标注的实验性风险。
 
-Archify 3.1.0 是独立的十型展示引擎；旧 IR v1 仅映射其 architecture 模式，本项目原生通道可验收 architecture、workflow、sequence、dataflow、lifecycle 五种官方 JSON 模式，尚未接入新增的 erd、tree、class、timeline、waterfall。它不充当 C4、UML、BPMN 或 ERD 的规范导出器。
+Archify 3.1.0 是独立的十型展示引擎；旧 IR v1 仅映射其 architecture 模式，本项目原生通道可验收 architecture、workflow、sequence、dataflow、lifecycle、erd、tree、class、timeline、waterfall 十种官方 JSON 模式。ERD、树、类、时间线与耗时瀑布图遵循 Archify typed schema；官方引擎校验不构成 C4、UML、BPMN 或其他交换格式的一致性认证。
 
-各官方引擎的图型目录大于上表的分型 IR 范围。对 IR v2 未覆盖的图型，Skill 按[原生绘图约定](../skills/project-docs-diagram/references/native-diagrams.md)选择语义、核对代码、编写官方原生文件，再由 [`render_native_diagram.py`](../scripts/render_native_diagram.py) 交给 Mermaid、PlantUML、draw.io 或 Archify 官方 CLI 验证与导出；Archify 原生 JSON 覆盖上述五种模式。源码图须附逐条证据清单：`sourceEvidence: anchors_validated` 只证明图中文字及源码引文存在，`claimSemantics: not_proven` 提醒人工复核解释；未附清单时为 `sourceEvidence: not_checked`。完整差异见[渲染引擎能力审计](RENDERER_CAPABILITY_AUDIT.md)。
+各官方引擎的图型目录大于上表的分型 IR 范围。对 IR v2 未覆盖的图型，Skill 按[原生绘图约定](../skills/project-docs-diagram/references/native-diagrams.md)选择语义、核对代码、编写官方原生文件，再由 [`render_native_diagram.py`](../scripts/render_native_diagram.py) 交给 Mermaid、PlantUML、draw.io 或 Archify 官方 CLI 验证与导出；Archify 原生 JSON 覆盖上述十种模式。源码图须附逐条证据清单：`sourceEvidence: anchors_validated` 只证明图中文字及源码引文存在，`claimSemantics: not_proven` 提醒人工复核解释；未附清单时为 `sourceEvidence: not_checked`。完整差异见[渲染引擎能力审计](RENDERER_CAPABILITY_AUDIT.md)。
 
 ## 简短请求的默认行为
 

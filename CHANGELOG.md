@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-16
+
+- 原生通道复审：非法 `diagram_type`、证据版本、引用和来源类型返回校验错误；拒绝用布尔值或浮点数冒充证据版本。Archify 官方交付失败时清理未验证 HTML；显式配置官方 CLI 时，缺失示例将导致验收失败，不再静默跳过。补齐 workflow／lifecycle `mainPath` 和 workflow `semanticChecks` 的逐项证据清点；失败回执缺少错误详情时返回可读的交付失败信息。
+
+- Archify 3.1.0 原生通道新增 `erd`、`tree`、`class`、`timeline`、`waterfall`，支持官方 typed JSON 校验、交互 HTML 和六种导出格式；证据清单 v2 清点实体、关系、树节点、类型、泳道、事件、耗时片段和说明卡片，拒绝主数组缺失或为空、漏证据及畸形数组。补充官方十型回归、新增五型的格式导出、非法语义、旧成品清理和源码证据测试；IR v2 转换器保持现有范围。
+
 ## [0.5.1] - 2026-10-16
 
 - 绘图依赖基线升级至 draw.io Desktop 32.4.1、Archify 3.1.0；Archify 改用官方发行 ZIP 并校验 SHA-256。更新时核对实际版本，保留相同或更高稳定版本，无法识别版本时停止，避免降级。
@@ -73,7 +79,8 @@
 - 修复 macOS 符号链接环境下 tree-sitter 回退路径未 resolve 导致 narrowed scan 静默失效的问题；`--no-codegraph` 的优先级高于测试钩子环境变量。
 - 文档同步：SKILL.md 与 README 增补发现引擎章节、降级规则与可选依赖安装方式。
 
-[Unreleased]: https://github.com/ainiaa/skills-project-docs/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/ainiaa/skills-project-docs/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/ainiaa/skills-project-docs/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/ainiaa/skills-project-docs/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/ainiaa/skills-project-docs/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/ainiaa/skills-project-docs/compare/v0.4.0...v0.4.1

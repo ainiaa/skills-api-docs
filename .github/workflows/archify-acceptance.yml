@@ -21,10 +21,10 @@ jobs:
         env:
           ARCHIFY_OFFICIAL_CLI: ${{ github.workspace }}/.renderers/managed/bin/archify
         run: python3 scripts/test_architecture.py
-      - name: Run all five native Archify mode tests
+      - name: Run all ten native Archify modes and new-type export tests
         env:
           ARCHIFY_OFFICIAL_CLI: ${{ github.workspace }}/.renderers/managed/bin/archify
-        run: python3 -m unittest discover -s scripts -p test_native_diagrams.py
+        run: python3 -m unittest discover -s scripts -p 'test_*native*.py'
     env:
       UNDERSTAND_RENDERER_HOME: ${{ github.workspace }}/.renderers/managed
 
